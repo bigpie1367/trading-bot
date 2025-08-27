@@ -3,7 +3,8 @@ set -euo pipefail
 
 : "${POSTGRES_DB:?POSTGRES_DB is required}"
 : "${POSTGRES_USER:?POSTGRES_USER is required}"
-export PGPASSWORD="${POSTGRES_PASSWORD:-}"
+: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+export PGPASSWORD="${POSTGRES_PASSWORD}"
 
 /usr/local/bin/docker-entrypoint.sh postgres &
 POSTGRES_PID=$!
