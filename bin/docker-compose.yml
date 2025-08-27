@@ -13,7 +13,6 @@ services:
     build:
       context: .
       dockerfile: ./compose/database/Dockerfile
-    container_name: trading-db
     env_file:
       - ./.envs/.database
     volumes:
@@ -21,7 +20,7 @@ services:
     ports:
       - 5433:5432
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,7 +33,6 @@ services:
   # -------------------------
   redis:
     image: redis:7.0
-    container_name: trading-redis
     restart: unless-stopped
     networks:
       - trading-bot-network
@@ -44,9 +42,8 @@ services:
   # -------------------------
   collector:
     build:
-      context: .
-      dockerfile: ./compose/bot/Dockerfile
-    container_name: collector
+      context: ..
+      dockerfile: ./bin/compose/bot/Dockerfile
     env_file:
       - ./.envs/.bot
     command: celery -A tasks worker --loglevel=INFO -Q collector_queue
@@ -62,9 +59,8 @@ services:
   # -------------------------
   trader:
     build:
-      context: .
-      dockerfile: ./compose/bot/Dockerfile
-    container_name: trader
+      context: ..
+      dockerfile: ./bin/compose/bot/Dockerfile
     env_file:
       - ./.envs/.bot
     command: celery -A tasks worker --loglevel=INFO -Q trader_queue
@@ -80,9 +76,8 @@ services:
   # -------------------------
   optimizer:
     build:
-      context: .
-      dockerfile: ./compose/bot/Dockerfile
-    container_name: optimizer
+      context: ..
+      dockerfile: ./bin/compose/bot/Dockerfile
     env_file:
       - ./.envs/.bot
     command: celery -A tasks worker --loglevel=INFO -Q optimizer_queue
@@ -98,9 +93,8 @@ services:
   # -------------------------
   beat:
     build:
-      context: .
-      dockerfile: ./compose/bot/Dockerfile
-    container_name: beat
+      context: ..
+      dockerfile: ./bin/compose/bot/Dockerfile
     env_file:
       - ./.envs/.bot
     command: celery -A beat_schedule beat --loglevel=INFO

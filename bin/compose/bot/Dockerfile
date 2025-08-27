@@ -16,7 +16,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # requirements 설치
-COPY requirements/base.txt /tmp/requirements.txt
+COPY bin/requirements/base.txt /tmp/requirements.txt
 RUN pip install --upgrade pip && pip install -r /tmp/requirements.txt
 
 # 애플리케이션 소스 복사
