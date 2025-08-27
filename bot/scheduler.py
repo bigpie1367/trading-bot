@@ -1,4 +1,4 @@
-from tasks import app
+from .tasks import app
 
 
 app.conf.beat_schedule = {

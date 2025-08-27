@@ -97,7 +97,7 @@ services:
       dockerfile: ./bin/compose/bot/Dockerfile
     env_file:
       - ./.envs/.bot
-    command: celery -A beat_schedule beat --loglevel=INFO
+    command: celery -A bot.scheduler beat --loglevel=INFO
     depends_on:
       - database
       - redis
