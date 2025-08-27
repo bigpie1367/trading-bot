@@ -5,6 +5,7 @@ __pycache__/
 *.pyd
 .env
 .env.*
+.envs/
 .config
 dist/
 build/
