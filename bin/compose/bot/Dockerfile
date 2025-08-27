@@ -20,7 +20,7 @@ COPY bin/requirements/base.txt /tmp/requirements.txt
 RUN pip install --upgrade pip && pip install -r /tmp/requirements.txt
 
 # 애플리케이션 소스 복사
-COPY . /app
+COPY bot /app
 
 # 기본 커맨드는 bash로, 각 컨테이너에서는 docker-compose에서 override
 CMD ["bash"]
