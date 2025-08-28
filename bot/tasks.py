@@ -9,7 +9,7 @@ from . import optimizer
 app = Celery(
     "trading_bot",
     broker=get_env("CELERY_BROKER_URL"),
-    backend=get_env("CELERY_RESULT_BACKEND_URL"),
+    backend=get_env("CELERY_BACKEND_URL"),
 )
 
 
