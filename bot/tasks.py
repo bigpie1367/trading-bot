@@ -1,13 +1,15 @@
 from celery import Celery
 
+from .utils import get_env
+
 from . import collector
 from . import trader
 from . import optimizer
 
 app = Celery(
     "trading_bot",
-    broker="redis://redis:6379/0",
-    backend="redis://redis:6379/1",
+    broker=get_env("CELERY_BROKER_URL"),
+    backend=get_env("CELERY_RESULT_BACKEND_URL"),
 )
 
 
