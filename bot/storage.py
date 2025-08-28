@@ -40,7 +40,7 @@ def get_recent_timestamp(connection, timeframe):
     with connection.cursor() as cursor:
         cursor.execute(sql, (timeframe,))
         row = cursor.fetchone()
-        if len(row) == 0:
+        if not row:
             return None
 
         ts = row[0]
@@ -123,6 +123,9 @@ def insert_order(
             sql,
             (side, order_type, price, quantity, status, exchange_order_id, Json(meta)),
         )
+
+        inserted_id = cursor.fetchone()[0]
+        return inserted_id
 
 
 def insert_trade(
