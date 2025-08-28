@@ -43,7 +43,7 @@ def collect_data():
 
         last_ts = _get_last_candle_timestamp(connection, timeframe)
         if last_ts is not None:
-            rows = [row for row in rows if row[1] > last_ts]
+            rows = [row for row in rows if row[1] >= last_ts]
 
         _upsert_candles(connection, rows)
         connection.commit()
@@ -61,8 +61,8 @@ def _get_candles(market, unit, count=200):
     response = requests.get(
         url,
         params=params,
-        headers={"Accept": "application/json", "User-Agent": "trading-bot/collector"},
-        timeout=10,
+        headers=UPBIT_HEADERS,
+        timeout=REQUEST_TIMEOUT,
     )
     response.raise_for_status()
     return response.json()
