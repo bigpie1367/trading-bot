@@ -1,13 +1,12 @@
 import time
-import requests
 
 from datetime import timezone
 from dateutil import parser as date_parser
-from psycopg2.extras import execute_values, Json
+from psycopg2.extras import Json
 
 from .utils import get_env, get_db_connection, get_logger
 from .upbit import fetch_recent_candles
-from .storage import get_recent_candle, insert_candles
+from .storage import get_recent_timestamp, insert_candles
 
 logger = get_logger("collector")
 
@@ -38,7 +37,7 @@ def collect_data():
         raw = fetch_recent_candles(market=market, unit=unit)
         rows = _serialize_candles(raw, timeframe=timeframe)
 
-        last_ts = _get_recent_candle_timestamp(connection, timeframe)
+        last_ts = get_recent_timestamp(connection, timeframe)
         if last_ts is not None:
             rows = [row for row in rows if row[1] > last_ts]
 
@@ -81,15 +80,3 @@ def _serialize_candles(raw_candles, timeframe):
 
     rows.sort(key=lambda r: r[1])
     return rows
-
-
-def _get_recent_candle_timestamp(connection, timeframe):
-    row = get_recent_candle(connection, timeframe)
-    if row and row[0] is not None:
-        ts = row[0]
-        if ts.tzinfo is None:
-            return ts.replace(tzinfo=timezone.utc)
-
-        return ts.astimezone(timezone.utc)
-
-    return None

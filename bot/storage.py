@@ -1,7 +1,10 @@
-from datetime import datetime, timezone
+from datetime import timezone
 from psycopg2.extras import Json, execute_values
 
 from .utils import get_db_connection
+
+
+UPSERT_PAGE_SIZE = 200
 
 
 # ------------------------------
@@ -25,16 +28,26 @@ def get_recent_prices(timeframe, limit=200):
     return [float(r[0]) for r in rows][::-1]
 
 
-def get_recent_candle(connection, timeframe):
-    sql = "SELECT max(ts) FROM candles WHERE timeframe = %s"
+def get_recent_timestamp(connection, timeframe):
+    sql = """
+        SELECT ts
+        FROM candles
+        WHERE timeframe = %s
+        ORDER BY ts DESC
+        LIMIT 1
+    """
 
     with connection.cursor() as cursor:
         cursor.execute(sql, (timeframe,))
         row = cursor.fetchone()
-        if row and row[0] is not None:
-            return row[0]
+        if len(row) == 0:
+            return None
 
-        return None
+        ts = row[0]
+        if ts.tzinfo is None:
+            return ts.replace(tzinfo=timezone.utc)
+
+        return ts.astimezone(timezone.utc)
 
 
 def insert_candles(connection, rows):
@@ -64,7 +77,7 @@ def insert_candles(connection, rows):
 # ------------------------------
 
 
-def get_latest_weights(default_weights):
+def get_latest_weights():
     sql = """
         SELECT params
         FROM optimizer_results
@@ -77,8 +90,18 @@ def get_latest_weights(default_weights):
         cursor.execute(sql)
         row = cursor.fetchone()
 
-    weights = row[0]["params"]["weights"]
-    return weights
+    params = row[0]
+    if "weights" not in params or not isinstance(params["weights"], dict):
+        return {
+            "trend": 0,
+            "momentum": 0,
+            "swing": 0,
+            "scalping": 0,
+            "day": 0,
+            "price_action": 0,
+        }
+
+    return params["weights"]
 
 
 # ------------------------------
