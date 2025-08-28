@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS candles (
   close NUMERIC(18,8) NOT NULL,
   volume NUMERIC(28,8) NOT NULL,
   quote_volume NUMERIC(28,8),
-  trades_count INTEGER,
   meta JSONB DEFAULT '{}',
   PRIMARY KEY (timeframe, ts)
 );
