@@ -12,7 +12,10 @@ _stream_handler = logging.StreamHandler()
 _stream_handler.setFormatter(_json_formatter)
 
 
-def get_logger(name="trading-bot", level=os.getenv("LOG_LEVEL", "INFO")):
+def get_logger(name="trading-bot", level=None):
+    if level is None:
+        level = os.getenv("LOG_LEVEL", "INFO")
+
     logger = logging.getLogger(name)
     if not logger.handlers:
         logger.addHandler(_stream_handler)
@@ -31,4 +34,10 @@ def get_env(name, default=None):
 
 
 def get_db_connection():
-    return psycopg2.connect(get_env("DATABASE_URL"))
+    try:
+        conn = psycopg2.connect(get_env("DATABASE_URL"), autocommit=True)
+        conn.check_warnings()
+
+        return conn
+    except psycopg2.Error as e:
+        raise RuntimeError(f"Failed to connect to database: {e}")

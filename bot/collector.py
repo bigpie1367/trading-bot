@@ -43,7 +43,7 @@ def collect_data():
 
         last_ts = _get_last_candle_timestamp(connection, timeframe)
         if last_ts is not None:
-            rows = [row for row in rows if row[1] >= last_ts]
+            rows = [row for row in rows if row[1] > last_ts]
 
         _upsert_candles(connection, rows)
         connection.commit()
