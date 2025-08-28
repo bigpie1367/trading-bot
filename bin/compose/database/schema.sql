@@ -25,7 +25,6 @@ CREATE TABLE IF NOT EXISTS orders (
   id BIGSERIAL PRIMARY KEY,
   client_order_id UUID DEFAULT gen_random_uuid(),
   side TEXT NOT NULL CHECK (side IN ('buy','sell')),
-  order_type TEXT NOT NULL CHECK (order_type IN ('market','limit')),
   price NUMERIC(18,8),
   quantity NUMERIC(28,8) NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('new','partially_filled','filled','canceled','rejected')),
