@@ -29,33 +29,43 @@ def _sig_trend(prices):
 def _sig_momentum(prices, period=5):
     if len(prices) <= period:
         return 0
-    return 1 if prices[-1] - prices[-period] > 0 else -1
+
+    return 1 if prices[-1] - prices[-(period + 1)] > 0 else -1
 
 
 def _sig_swing(prices, s=5, l=20):
     if len(prices) < max(s, l):
         return 0
+
     return 1 if float(np.mean(prices[-s:])) > float(np.mean(prices[-l:])) else -1
 
 
 def _sig_scalping(prices, take_ratio=0.001, stop_ratio=0.001):
     if len(prices) < 2:
         return 0
+
     prev = float(prices[-2])
     last = float(prices[-1])
-    if prev <= 0:
+
+    take_ratio = abs(float(take_ratio))
+    stop_ratio = abs(float(stop_ratio))
+
+    if prev <= 0 or not np.isfinite(prev) or not np.isfinite(last):
         return 0
+
     change = (last - prev) / prev
     if change >= take_ratio:
         return 1
     if change <= -stop_ratio:
         return -1
+
     return 0
 
 
 def _sig_day(prices):
     if len(prices) < 2:
         return 0
+
     return 1 if prices[-1] > prices[-2] else -1
 
 
