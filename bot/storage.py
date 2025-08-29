@@ -77,7 +77,7 @@ def insert_candles(connection, rows):
 # ------------------------------
 
 
-def get_latest_weights():
+def get_recent_weights():
     sql = """
         SELECT params
         FROM optimizer_results
@@ -89,6 +89,16 @@ def get_latest_weights():
     with get_db_connection() as connection, connection.cursor() as cursor:
         cursor.execute(sql)
         row = cursor.fetchone()
+
+    if not row:
+        return {
+            "trend": 0.2,
+            "momentum": 0.2,
+            "swing": 0.2,
+            "scalping": 0.15,
+            "day": 0.15,
+            "price_action": 0.1,
+        }
 
     params = row[0]
     if "weights" not in params or not isinstance(params["weights"], dict):
@@ -109,23 +119,21 @@ def get_latest_weights():
 # ------------------------------
 
 
-def insert_order(
-    connection, side, order_type, price, quantity, status, exchange_order_id, meta
-):
+def insert_order(connection, side, price, quantity, status, exchange_order_id, meta):
     sql = """
-        INSERT INTO orders (side, order_type, price, quantity, status, exchange_order_id, meta)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO orders (side, price, quantity, status, exchange_order_id, meta)
+        VALUES (%s, %s, %s, %s, %s, %s)
         RETURNING id
     """
 
     with connection.cursor() as cursor:
         cursor.execute(
             sql,
-            (side, order_type, price, quantity, status, exchange_order_id, Json(meta)),
+            (side, price, quantity, status, exchange_order_id, Json(meta)),
         )
 
-        inserted_id = cursor.fetchone()[0]
-        return inserted_id
+        row = cursor.fetchone()
+        return row[0]
 
 
 def insert_trade(
