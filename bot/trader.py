@@ -170,6 +170,8 @@ def _record_order_and_trades(side, price, quantity, response):
             meta=exchange_meta,
         )
 
+        connection.commit()
+
         if order_uuid:
             detail = fetch_order(order_uuid)
 
@@ -184,9 +186,13 @@ def _record_order_and_trades(side, price, quantity, response):
 def _serialize_trade(raw_trade, order_id):
     data = {
         "order_id": order_id,
-        "executed_at": date_parser.isoparse(raw_trade.get("created_at")).replace(
-            tzinfo=timezone.utc
-        ),
+        "executed_at": (
+            lambda dt: (
+                dt.astimezone(timezone.utc)
+                if dt.tzinfo
+                else dt.replace(tzinfo=timezone.utc)
+            )
+        )(date_parser.isoparse(raw_trade.get("created_at"))),
         "price": _to_float(raw_trade.get("price")),
         "quantity": _to_float(raw_trade.get("volume")),
         "fee": _to_float(raw_trade.get("fee"), 0.0),

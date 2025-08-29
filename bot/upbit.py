@@ -64,6 +64,9 @@ def round_price_to_tick(price, mode="down"):
 def place_buy_limit(market, price, volume):
     """지정가 매수 주문"""
 
+    if price <= 0 or volume <= 0:
+        raise ValueError("Price and volume must be greater than 0")
+
     url = f"{UPBIT_API_BASE}/v1/orders"
     params = {
         "market": market,
@@ -78,7 +81,7 @@ def place_buy_limit(market, price, volume):
         **_make_auth_headers(query_string=query_string),
     }
 
-    res = requests.post(url, data=params, headers=headers, timeout=10)
+    res = requests.post(url, data=query_string, headers=headers, timeout=10)
     if not res.ok:
         raise RuntimeError(f"Upbit buy order failed: {res.status_code} {res.text}")
 
@@ -87,6 +90,9 @@ def place_buy_limit(market, price, volume):
 
 def place_sell_limit(market, price, volume):
     """지정가 매도 주문"""
+
+    if price <= 0 or volume <= 0:
+        raise ValueError("Price and volume must be greater than 0")
 
     url = f"{UPBIT_API_BASE}/v1/orders"
     params = {

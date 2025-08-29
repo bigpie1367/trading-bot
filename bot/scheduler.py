@@ -4,13 +4,13 @@ from .tasks import app
 
 
 app.conf.beat_schedule = {
-    # 매 분 정각: 수집 후 약간 지연하여 트레이딩 실행
+    # 매 분 정각: 데이터 수집 후 트레이딩
     "collect-then-trade-every-minute": {
         "task": "bot.tasks.collect_and_trade",
         "schedule": crontab(minute="*"),
         "options": {"queue": "collector_queue"},
     },
-    # 매일 00:05
+    # 매일 00:05: 트레이딩 모델 최적화
     "run-optimizer-every-day": {
         "task": "bot.tasks.optimize_weights",
         "schedule": crontab(minute=5, hour=0),
