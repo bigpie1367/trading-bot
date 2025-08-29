@@ -108,7 +108,7 @@ def place_sell_limit(market, price, volume):
         **_make_auth_headers(query_string=query_string),
     }
 
-    res = requests.post(url, data=params, headers=headers, timeout=10)
+    res = requests.post(url, data=query_string, headers=headers, timeout=10)
     if not res.ok:
         raise RuntimeError(f"Upbit sell order failed: {res.status_code} {res.text}")
 
