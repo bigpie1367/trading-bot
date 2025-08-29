@@ -35,6 +35,6 @@ def get_env(name, default=None):
 
 def get_db_connection():
     try:
-        return psycopg2.connect(get_env("DATABASE_URL"), autocommit=True)
+        return psycopg2.connect(get_env("DATABASE_URL"))
     except (RuntimeError, psycopg2.Error) as e:
         raise RuntimeError("Failed to connect to database") from e
