@@ -1,5 +1,5 @@
 from datetime import timezone
-from psycopg2.extras import Json, execute_values
+from psycopg.types.json import Json
 
 from .utils import get_db_connection
 
@@ -57,7 +57,7 @@ def insert_candles(connection, rows):
     sql = """
         INSERT INTO candles (
             timeframe, ts, open, high, low, close, volume, quote_volume, meta
-        ) VALUES %s
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (timeframe, ts) DO UPDATE SET
             open = EXCLUDED.open,
             high = EXCLUDED.high,
@@ -69,7 +69,22 @@ def insert_candles(connection, rows):
         """
 
     with connection.cursor() as cursor:
-        execute_values(cursor, sql, rows, page_size=UPSERT_PAGE_SIZE)
+        cursor.executemany(sql, rows)
+
+
+def load_closes(timeframe, months):
+    sql = """
+        SELECT close
+        FROM candles
+        WHERE timeframe = %s AND ts >= now() - make_interval(months => %s)
+        ORDER BY ts ASC
+    """
+
+    with get_db_connection() as connection, connection.cursor() as cursor:
+        cursor.execute(sql, (timeframe, months))
+        rows = cursor.fetchall()
+
+    return [float(r[0]) for r in rows]
 
 
 # ------------------------------
@@ -112,6 +127,40 @@ def get_recent_weights():
         }
 
     return params["weights"]
+
+
+def save_optimizer_result(params, metrics, mark_best):
+    sql_reset = """
+        UPDATE optimizer_results
+        SET is_best = FALSE
+        WHERE is_best = TRUE
+    """
+
+    sql_insert = """
+        INSERT INTO optimizer_results (params, metrics, is_best)
+        VALUES (%s, %s, %s)
+    """
+
+    params_json = {
+        "weights": params.get("weights", {}),
+        "threshold": params.get("threshold"),
+    }
+
+    metrics_json = {
+        "final_equity": metrics.get("final_equity"),
+        "total_return": metrics.get("total_return"),
+        "max_drawdown": metrics.get("max_drawdown"),
+        "sharpe": metrics.get("sharpe"),
+        "win_rate": metrics.get("win_rate"),
+        "num_trades": metrics.get("num_trades"),
+    }
+
+    with get_db_connection() as connection, connection.cursor() as cursor:
+        if mark_best:
+            cursor.execute(sql_reset)
+
+        cursor.execute(sql_insert, (Json(params_json), Json(metrics_json), mark_best))
+        connection.commit()
 
 
 # ------------------------------

@@ -2,6 +2,7 @@ from celery.schedules import crontab
 
 from .tasks import app
 
+celery_app = app
 
 app.conf.beat_schedule = {
     # 매 분 정각: 데이터 수집 후 트레이딩
@@ -10,10 +11,10 @@ app.conf.beat_schedule = {
         "schedule": crontab(minute="*"),
         "options": {"queue": "collector_queue"},
     },
-    # 매일 00:05: 트레이딩 모델 최적화
+    # 매일 01:00: 트레이딩 모델 최적화
     "run-optimizer-every-day": {
         "task": "bot.tasks.optimize_weights",
-        "schedule": crontab(minute=5, hour=0),
+        "schedule": crontab(minute=0, hour=1),
         "options": {"queue": "optimizer_queue"},
     },
 }

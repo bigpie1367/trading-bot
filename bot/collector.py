@@ -2,7 +2,7 @@ import time
 
 from datetime import timezone
 from dateutil import parser as date_parser
-from psycopg2.extras import Json
+from psycopg.types.json import Json
 
 from .utils import get_env, get_db_connection, get_logger
 from .upbit import fetch_recent_candles
