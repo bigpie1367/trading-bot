@@ -11,7 +11,7 @@ app.conf.beat_schedule = {
         "schedule": crontab(minute="*"),
         "options": {"queue": "collector_queue"},
     },
-    # 매일 00:05: 트레이딩 모델 최적화
+    # 매일 01:00: 트레이딩 모델 최적화
     "run-optimizer-every-day": {
         "task": "bot.tasks.optimize_weights",
         "schedule": crontab(minute=0, hour=1),
