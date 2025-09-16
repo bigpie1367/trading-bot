@@ -2,11 +2,11 @@ import os
 import math
 import numpy as np
 
-from psycopg.types.json import Json
 from concurrent.futures import ThreadPoolExecutor
 
-from .utils import get_env, get_db_connection, get_logger
+from .utils import get_env, get_logger
 from .upbit import round_price_to_tick
+from .storage import load_closes, save_optimizer_result
 from .strategies import ensemble_signal
 
 
@@ -42,7 +42,7 @@ def run():
         opt_window = int(get_env("OPT_WINDOW", "200"))
         max_workers = int(get_env("OPT_THREADS", str(min(8, (os.cpu_count() or 4)))))
 
-        closes = _load_closes(timeframe=timeframe, months=3)
+        closes = load_closes(timeframe=timeframe, months=3)
         if len(closes) < 200:
             logger.info(
                 "not enough candles for backtest; need >=200, got %d", len(closes)
@@ -98,7 +98,7 @@ def run():
             pairs, key=lambda r: (r[0].get("total_return", 0), r[0].get("sharpe", 0))
         )
 
-        _save_result(params=best_params, metrics=best, mark_best=True)
+        save_optimizer_result(params=best_params, metrics=best, mark_best=True)
 
         logger.info(
             "optimization done",
@@ -158,21 +158,6 @@ def _generate_weight_grid(step):
                         candidates.append({k: v for k, v in zip(STRATEGY_KEYS, w)})
 
     return candidates
-
-
-def _load_closes(timeframe, months):
-    sql = """
-        SELECT close
-        FROM candles
-        WHERE timeframe = %s AND ts >= now() - make_interval(months => %s)
-        ORDER BY ts ASC
-    """
-
-    with get_db_connection() as connection, connection.cursor() as cursor:
-        cursor.execute(sql, (timeframe, months))
-        rows = cursor.fetchall()
-
-    return [float(r[0]) for r in rows]
 
 
 def _backtest(
@@ -300,40 +285,6 @@ def _sharpe_ratio(returns, periods_per_year=365 * 24 * 60):
         return 0.0
     # 분당 수익률을 연율화
     return math.sqrt(periods_per_year) * (mean / std)
-
-
-def _save_result(params, metrics, mark_best):
-    sql_reset = """
-        UPDATE optimizer_results
-        SET is_best = FALSE
-        WHERE is_best = TRUE
-    """
-
-    sql_insert = """
-        INSERT INTO optimizer_results (params, metrics, is_best)
-        VALUES (%s, %s, %s)
-    """
-
-    params_json = {
-        "weights": params.get("weights", {}),
-        "threshold": params.get("threshold"),
-    }
-
-    metrics_json = {
-        "final_equity": metrics.get("final_equity"),
-        "total_return": metrics.get("total_return"),
-        "max_drawdown": metrics.get("max_drawdown"),
-        "sharpe": metrics.get("sharpe"),
-        "win_rate": metrics.get("win_rate"),
-        "num_trades": metrics.get("num_trades"),
-    }
-
-    with get_db_connection() as connection, connection.cursor() as cursor:
-        if mark_best:
-            cursor.execute(sql_reset)
-
-        cursor.execute(sql_insert, (Json(params_json), Json(metrics_json), mark_best))
-        connection.commit()
 
 
 if __name__ == "__main__":
