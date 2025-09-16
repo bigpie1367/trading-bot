@@ -1,13 +1,13 @@
 import os
 import math
-
 import numpy as np
-from psycopg2.extras import Json
+
+from psycopg.types.json import Json
 from concurrent.futures import ThreadPoolExecutor
 
 from .utils import get_env, get_db_connection, get_logger
-from .strategies import ensemble_signal
 from .upbit import round_price_to_tick
+from .strategies import ensemble_signal
 
 
 logger = get_logger("optimizer")
@@ -27,7 +27,6 @@ GRID_STEP = 0.1  # 가중치 전수 탐색의 기본 격자 간격(합=1.0)
 
 def run():
     """3개월 데이터 기반 무작위 탐색으로 weights/threshold 최적화."""
-
     try:
         timeframe = f"{int(get_env('UNIT', '1'))}m"
 
@@ -62,10 +61,11 @@ def run():
                 "grid_step": GRID_STEP,
                 "num_candidates": len(candidates),
                 "num_candles": len(closes),
+                "max_workers": max_workers,
             },
         )
 
-        # 모든 후보에 대해 멀티쓰레드로 백테스트 수행 후 최적 선택
+        # 모든 후보에 대해 백테스트 수행 후 최적 선택
         param_list = [
             {"weights": w, "threshold": th} for w in candidates for th in thresholds
         ]
@@ -264,6 +264,10 @@ def _backtest(
     sharpe = _sharpe_ratio(returns)
     win_rate = (win_trades / total_trades) if total_trades > 0 else 0.0
 
+    print(
+        f"final_equity: {final_equity}, total_return: {total_return}, mdd: {max_dd}, sharpe: {sharpe}, win_rate: {win_rate}, total_trades: {total_trades}"
+    )
+
     return {
         "final_equity": final_equity,
         "total_return": total_return,
@@ -330,3 +334,7 @@ def _save_result(params, metrics, mark_best):
 
         cursor.execute(sql_insert, (Json(params_json), Json(metrics_json), mark_best))
         connection.commit()
+
+
+if __name__ == "__main__":
+    run()

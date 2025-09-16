@@ -1,5 +1,5 @@
 from datetime import timezone
-from psycopg2.extras import Json, execute_values
+from psycopg.types.json import Json
 
 from .utils import get_db_connection
 
@@ -57,7 +57,7 @@ def insert_candles(connection, rows):
     sql = """
         INSERT INTO candles (
             timeframe, ts, open, high, low, close, volume, quote_volume, meta
-        ) VALUES %s
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (timeframe, ts) DO UPDATE SET
             open = EXCLUDED.open,
             high = EXCLUDED.high,
@@ -69,7 +69,7 @@ def insert_candles(connection, rows):
         """
 
     with connection.cursor() as cursor:
-        execute_values(cursor, sql, rows, page_size=UPSERT_PAGE_SIZE)
+        cursor.executemany(sql, rows)
 
 
 # ------------------------------
