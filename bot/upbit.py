@@ -167,7 +167,11 @@ def _make_auth_headers(params=None, query_string=None):
 def _format_price(price):
     p = Decimal(str(price))
     tick = Decimal(str(_get_tick_size(price)))
-    q = p.quantize(tick, rounding=ROUND_DOWN)
+    if tick >= 1:
+        q = (p / tick).to_integral_value(rounding=ROUND_DOWN) * tick
+    else:
+        q = p.quantize(tick, rounding=ROUND_DOWN)
+
     decimals = max(0, -tick.as_tuple().exponent)
     return f"{q:.{decimals}f}"
 
