@@ -14,7 +14,7 @@ UPBIT_API_BASE = "https://api.upbit.com"
 UPBIT_API_HEADER = {
     "Accept": "application/json",
     "User-Agent": "trading-bot/bot",
-    "Content-Type": "application/x-www-form-urlencoded",
+    "Content-Type": "application/json; charset=utf-8",
 }
 
 
@@ -75,7 +75,7 @@ def place_buy_limit(market, price, volume, identifier):
         "ord_type": "limit",
         "price": _format_price(price),
         "volume": _format_volume(volume),
-        "client_order_id": identifier,
+        "identifier": identifier,
     }
     query_string = urlencode(params)
     headers = {
@@ -103,7 +103,7 @@ def place_sell_limit(market, price, volume, identifier):
         "ord_type": "limit",
         "price": _format_price(price),
         "volume": _format_volume(volume),
-        "client_order_id": identifier,
+        "identifier": identifier,
     }
     query_string = urlencode(params)
     headers = {
@@ -111,7 +111,7 @@ def place_sell_limit(market, price, volume, identifier):
         **_make_auth_headers(query_string=query_string),
     }
 
-    res = requests.post(url, data=query_string, headers=headers, timeout=10)
+    res = requests.post(url, json=params, headers=headers, timeout=10)
     if not res.ok:
         raise RuntimeError(f"Upbit sell order failed: {res.status_code} {res.text}")
 
