@@ -160,27 +160,31 @@ def _record_order_and_trades(side, price, quantity, response):
     exchange_meta = response if isinstance(response, dict) else {}
 
     with get_db_connection() as connection:
-        order_id = insert_order(
-            connection=connection,
-            side=side,
-            price=price,
-            quantity=quantity,
-            status="new",
-            exchange_order_id=order_uuid,
-            meta=exchange_meta,
-        )
+        try:
+            order_id = insert_order(
+                connection=connection,
+                side=side,
+                price=price,
+                quantity=quantity,
+                status="new",
+                exchange_order_id=order_uuid,
+                meta=exchange_meta,
+            )
 
-        connection.commit()
+            connection.commit()
 
-        if order_uuid:
-            detail = fetch_order(order_uuid)
+            if order_uuid:
+                detail = fetch_order(order_uuid)
 
-            trades = detail.get("trades", []) or []
-            for t in trades:
-                data = _serialize_trade(t, order_id)
-                insert_trade(connection=connection, **data)
+                trades = detail.get("trades", []) or []
+                for t in trades:
+                    data = _serialize_trade(t, order_id)
+                    insert_trade(connection=connection, **data)
 
-        connection.commit()
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
 
 
 def _serialize_trade(raw_trade, order_id):
