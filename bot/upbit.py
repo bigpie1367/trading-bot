@@ -62,7 +62,7 @@ def round_price_to_tick(price, mode="down"):
     return float(int(p / tick) * tick)
 
 
-def place_buy_limit(market, price, volume):
+def place_buy_limit(market, price, volume, identifier):
     """지정가 매수 주문"""
 
     if price <= 0 or volume <= 0:
@@ -75,6 +75,7 @@ def place_buy_limit(market, price, volume):
         "ord_type": "limit",
         "price": _format_price(price),
         "volume": _format_volume(volume),
+        "client_order_id": identifier,
     }
     query_string = urlencode(params)
     headers = {
@@ -89,7 +90,7 @@ def place_buy_limit(market, price, volume):
     return res.json()
 
 
-def place_sell_limit(market, price, volume):
+def place_sell_limit(market, price, volume, identifier):
     """지정가 매도 주문"""
 
     if price <= 0 or volume <= 0:
@@ -102,6 +103,7 @@ def place_sell_limit(market, price, volume):
         "ord_type": "limit",
         "price": _format_price(price),
         "volume": _format_volume(volume),
+        "client_order_id": identifier,
     }
     query_string = urlencode(params)
     headers = {

@@ -1,3 +1,5 @@
+import uuid
+
 from datetime import timezone
 from dateutil import parser as date_parser
 from decimal import Decimal, ROUND_DOWN
@@ -81,7 +83,8 @@ def _execute_buy(market, last_price, aggressiveness):
         return None
 
     # 지정가 매수 주문 전송 및 기록
-    response = place_buy_limit(market, target_price, volume)
+    identifier = str(uuid.uuid4())
+    response = place_buy_limit(market, target_price, volume, identifier)
     _record_order_and_trades("buy", target_price, volume, response)
 
     return {
@@ -109,7 +112,8 @@ def _execute_sell(market, last_price, aggressiveness):
         return None
 
     # 보유 코인 전량 매도 및 기록
-    response = place_sell_limit(market, target_price, balance)
+    identifier = str(uuid.uuid4())
+    response = place_sell_limit(market, target_price, balance, identifier)
     _record_order_and_trades("sell", target_price, balance, response)
 
     return {
