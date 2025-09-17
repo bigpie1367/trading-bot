@@ -157,6 +157,10 @@ def save_optimizer_result(params, metrics, mark_best):
 
     with get_db_connection() as connection, connection.cursor() as cursor:
         if mark_best:
+            # 기존 best 결과 잠금
+            cursor.execute(
+                "SELECT id FROM optimizer_results WHERE is_best = TRUE FOR UPDATE"
+            )
             cursor.execute(sql_reset)
 
         cursor.execute(sql_insert, (Json(params_json), Json(metrics_json), mark_best))
