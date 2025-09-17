@@ -3,6 +3,7 @@ import hashlib
 import requests
 import jwt
 
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_DOWN
 from urllib.parse import urlencode
 
@@ -140,7 +141,11 @@ def _make_auth_headers(params=None, query_string=None):
     access_key = get_env("UPBIT_ACCESS_KEY")
     secret_key = get_env("UPBIT_SECRET_KEY")
 
-    payload = {"access_key": access_key, "nonce": str(uuid.uuid4())}
+    payload = {
+        "access_key": access_key,
+        "nonce": str(uuid.uuid4()),
+        "exp": datetime.utcnow() + timedelta(seconds=30),
+    }
 
     if query_string is not None:
         m = hashlib.sha512()
