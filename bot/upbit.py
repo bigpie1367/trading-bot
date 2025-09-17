@@ -14,7 +14,6 @@ UPBIT_API_BASE = "https://api.upbit.com"
 UPBIT_API_HEADER = {
     "Accept": "application/json",
     "User-Agent": "trading-bot/bot",
-    "Content-Type": "application/json; charset=utf-8",
 }
 
 
@@ -75,15 +74,14 @@ def place_buy_limit(market, price, volume, identifier):
         "ord_type": "limit",
         "price": _format_price(price),
         "volume": _format_volume(volume),
-        "identifier": identifier,
     }
-    query_string = urlencode(params)
+    query_string = urlencode(params, doseq=True)
     headers = {
         **UPBIT_API_HEADER,
         **_make_auth_headers(query_string=query_string),
     }
 
-    res = requests.post(url, data=query_string, headers=headers, timeout=10)
+    res = requests.post(url, json=params, headers=headers, timeout=10)
     if not res.ok:
         raise RuntimeError(f"Upbit buy order failed: {res.status_code} {res.text}")
 
@@ -103,9 +101,8 @@ def place_sell_limit(market, price, volume, identifier):
         "ord_type": "limit",
         "price": _format_price(price),
         "volume": _format_volume(volume),
-        "identifier": identifier,
     }
-    query_string = urlencode(params)
+    query_string = urlencode(params, doseq=True)
     headers = {
         **UPBIT_API_HEADER,
         **_make_auth_headers(query_string=query_string),
@@ -146,17 +143,16 @@ def _make_auth_headers(params=None, query_string=None):
     payload = {
         "access_key": access_key,
         "nonce": str(uuid.uuid4()),
-        "exp": datetime.utcnow() + timedelta(seconds=30),
     }
 
     if query_string is not None:
         m = hashlib.sha512()
-        m.update(query_string.encode())
+        m.update(query_string.encode("utf-8"))
         query_hash = m.hexdigest()
         payload.update({"query_hash": query_hash, "query_hash_alg": "SHA512"})
     elif params:
         m = hashlib.sha512()
-        m.update(urlencode(params).encode())
+        m.update(urlencode(params).encode("utf-8"))
         query_hash = m.hexdigest()
         payload.update({"query_hash": query_hash, "query_hash_alg": "SHA512"})
 
