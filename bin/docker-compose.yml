@@ -1,0 +1,106 @@
+networks:
+  trading-bot-network:
+    driver: bridge
+
+volumes:
+  timescale_data: {}
+
+services:
+  # -------------------------
+  # Database
+  # -------------------------
+  database:
+    build:
+      context: .
+      dockerfile: ./compose/database/Dockerfile
+    env_file:
+      - ./.envs/.database
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    ports:
+      - 5433:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - trading-bot-network
+
+  # -------------------------
+  # Redis
+  # -------------------------
+  redis:
+    image: redis:7.0
+    restart: unless-stopped
+    networks:
+      - trading-bot-network
+
+  # -------------------------
+  # Collector Worker
+  # -------------------------
+  collector:
+    build:
+      context: ..
+      dockerfile: ./bin/compose/bot/Dockerfile
+    env_file:
+      - ./.envs/.bot
+    command: python -m celery -A bot.tasks worker --loglevel=INFO -Q collector_queue
+    depends_on:
+      - database
+      - redis
+    restart: unless-stopped
+    networks:
+      - trading-bot-network
+
+  # -------------------------
+  # Trader Worker
+  # -------------------------
+  trader:
+    build:
+      context: ..
+      dockerfile: ./bin/compose/bot/Dockerfile
+    env_file:
+      - ./.envs/.bot
+    command: python -m celery -A bot.tasks worker --loglevel=INFO -Q trader_queue
+    depends_on:
+      - database
+      - redis
+    restart: unless-stopped
+    networks:
+      - trading-bot-network
+
+  # -------------------------
+  # Optimizer Worker
+  # -------------------------
+  optimizer:
+    build:
+      context: ..
+      dockerfile: ./bin/compose/bot/Dockerfile
+    env_file:
+      - ./.envs/.bot
+    command: python -m celery -A bot.tasks worker --loglevel=INFO -Q optimizer_queue
+    depends_on:
+      - database
+      - redis
+    restart: unless-stopped
+    networks:
+      - trading-bot-network
+
+  # -------------------------
+  # Celery Beat
+  # -------------------------
+  beat:
+    build:
+      context: ..
+      dockerfile: ./bin/compose/bot/Dockerfile
+    env_file:
+      - ./.envs/.bot
+    command: python -m celery -A bot.scheduler beat --loglevel=INFO
+    depends_on:
+      - database
+      - redis
+    restart: unless-stopped
+    networks:
+      - trading-bot-network

@@ -1,0 +1,32 @@
+# DATABASE
+# ------------------------------------------------------------------------------
+DATABASE_URL=postgresql://trader:trader@database:5432/trading
+
+# CELERY
+# ------------------------------------------------------------------------------
+CELERY_BROKER_URL=redis://redis:6379/0
+CELERY_BACKEND_URL=redis://redis:6379/1
+
+# UPBIT
+# ------------------------------------------------------------------------------
+UPBIT_ACCESS_KEY=your_access_key
+UPBIT_SECRET_KEY=your_secret_key
+
+# TRADING
+# ------------------------------------------------------------------------------
+MARKET=KRW-BTC
+THRESHOLD=0.2
+AGGRESSIVENESS=0.0015
+FEE_RATE=0.0005
+FEE_BUFFER=0.0005
+
+# OPTIMIZER
+# ------------------------------------------------------------------------------
+OPT_INITIAL_CASH=1000000
+OPT_WINDOW=200
+OPT_THREADS=4
+OPT_THRESHOLDS=0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5
+
+# LOGGING
+# ------------------------------------------------------------------------------
+LOG_LEVEL=INFO

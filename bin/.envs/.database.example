@@ -1,0 +1,6 @@
+# PostgreSQL
+# ------------------------------------------------------------------------------
+POSTGRES_HOST=postgres
+POSTGRES_DB=trading
+POSTGRES_USER=trader
+POSTGRES_PASSWORD=trader
