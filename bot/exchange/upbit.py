@@ -140,6 +140,13 @@ def _make_auth_headers(params=None, query_string=None):
     access_key = settings.upbit_access_key
     secret_key = settings.upbit_secret_key
 
+    # Upbit API 키 검증
+    if not access_key or not secret_key:
+        raise ValueError(
+            "Upbit API keys are not configured. "
+            "Please set UPBIT_ACCESS_KEY and UPBIT_SECRET_KEY in your .env file."
+        )
+
     payload = {
         "access_key": access_key,
         "nonce": str(uuid.uuid4()),

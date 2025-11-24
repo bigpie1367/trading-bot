@@ -11,8 +11,8 @@ class Settings(BaseSettings):
     database_url: str
 
     # Upbit
-    upbit_access_key: str | None = None
-    upbit_secret_key: str | None = None
+    upbit_access_key: str
+    upbit_secret_key: str
 
     # Trading
     market: str = "KRW-BTC"
@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     fee_buffer: float = 0.0005
 
     # Celery
-    celery_broker_url: str | None = None
-    celery_backend_url: str | None = None
+    celery_broker_url: str
+    celery_backend_url: str
 
     # Optimizer
     opt_initial_cash: float = 1000000.0
