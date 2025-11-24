@@ -1,14 +1,13 @@
-import os
 import math
-import numpy as np
-
 from concurrent.futures import ThreadPoolExecutor
 
-from .utils import get_env, get_logger
-from .upbit import round_price_to_tick
-from .storage import load_closes, save_optimizer_result
-from .strategies import ensemble_signal
+import numpy as np
 
+from bot.core.config import settings
+from bot.core.context import get_logger
+from bot.db.storage import load_ohlcv, save_optimizer_result
+from bot.exchange.upbit import round_price_to_tick
+from bot.strategies.signal import ensemble_signal
 
 logger = get_logger("optimizer")
 
@@ -28,25 +27,23 @@ GRID_STEP = 0.1  # 가중치 전수 탐색의 기본 격자 간격(합=1.0)
 def run():
     """3개월 데이터 기반 무작위 탐색으로 weights/threshold 최적화."""
     try:
-        timeframe = f"{int(get_env('UNIT', '1'))}m"
+        timeframe = "1m"
 
-        initial_cash = float(get_env("OPT_INITIAL_CASH", "1000000"))
+        initial_cash = settings.opt_initial_cash
 
-        fee_rate = float(get_env("FEE_RATE", "0.0005"))
-        fee_buffer = float(get_env("FEE_BUFFER", "0.0005"))
+        fee_rate = settings.fee_rate
+        fee_buffer = settings.fee_buffer
 
-        aggressiveness = float(get_env("AGGRESSIVENESS", "0.0015"))
+        aggressiveness = settings.aggressiveness
 
         thresholds = _generate_threshold_candidates()
 
-        opt_window = int(get_env("OPT_WINDOW", "200"))
-        max_workers = int(get_env("OPT_THREADS", str(min(8, (os.cpu_count() or 4)))))
+        opt_window = settings.opt_window
+        max_workers = settings.opt_threads
 
-        closes = load_closes(timeframe=timeframe, months=3)
-        if len(closes) < 200:
-            logger.info(
-                "not enough candles for backtest; need >=200, got %d", len(closes)
-            )
+        candles = load_ohlcv(timeframe=timeframe, months=3)
+        if len(candles) < 200:
+            logger.info(f"not enough candles for backtest; need >=200, got {len(candles)}")
             return
 
         candidates = _generate_weight_grid(GRID_STEP)
@@ -60,21 +57,19 @@ def run():
                 "search": "grid",
                 "grid_step": GRID_STEP,
                 "num_candidates": len(candidates),
-                "num_candles": len(closes),
+                "num_candles": len(candles),
                 "max_workers": max_workers,
             },
         )
 
         # 모든 후보에 대해 백테스트 수행 후 최적 선택
-        param_list = [
-            {"weights": w, "threshold": th} for w in candidates for th in thresholds
-        ]
+        param_list = [{"weights": w, "threshold": th} for w in candidates for th in thresholds]
         pairs = []
 
         def _eval_one(p):
             return (
                 _backtest(
-                    closes=closes,
+                    candles=candles,
                     weights=p["weights"],
                     threshold=p["threshold"],
                     initial_cash=initial_cash,
@@ -124,7 +119,7 @@ def run():
 
 
 def _generate_threshold_candidates():
-    raw = get_env("OPT_THRESHOLDS", "").strip()
+    raw = settings.opt_thresholds.strip()
     if raw:
         return [float(x) for x in raw.split(",") if x.strip()]
 
@@ -161,7 +156,7 @@ def _generate_weight_grid(step):
 
 
 def _backtest(
-    closes,
+    candles,
     weights,
     threshold,
     initial_cash,
@@ -182,12 +177,17 @@ def _backtest(
 
     min_order_krw = 5000.0
 
-    window = max(3, min(int(window), len(closes)))
-    for i in range(len(closes)):
-        price = float(closes[i])
+    window = max(3, min(int(window), len(candles)))
 
-        # 매 시점의 평가금액 기록
-        equity = cash_krw + coin_qty * price
+    # i는 "시그널을 계산하는 시점" (Close 기준)
+    # 거래는 i+1 시점의 Open 가격으로 체결
+    for i in range(len(candles) - 1):
+        # 다음 시점(i+1)의 시가로 거래 체결
+        next_open = candles[i + 1]["open"]
+        next_close = candles[i + 1]["close"]  # 평가금액 계산용
+
+        # 매 시점의 평가금액 기록 (다음 봉 종가 기준)
+        equity = cash_krw + coin_qty * next_close
         equity_curve.append(equity)
 
         if i > 0 and last_equity > 0:
@@ -199,16 +199,18 @@ def _backtest(
         if i + 1 < max(3, window):
             continue
 
-        # 최근 window개의 캔들로 시그널 계산 (현재 시점 포함)
-        recent = closes[i + 1 - window : i + 1]
-        score = float(ensemble_signal(recent, weights))
+        # 최근 window개의 캔들(종가)로 시그널 계산 (현재 시점 i 포함)
+        # candles[i]까지의 데이터만 사용해야 함 (미래 참조 방지)
+        recent_closes = [c["close"] for c in candles[i + 1 - window : i + 1]]
+        score = float(ensemble_signal(recent_closes, weights))
+
+        # 거래 체결 가격은 다음 봉 시가
+        exec_price = next_open
 
         # BUY
         if score >= threshold:
             if cash_krw > min_order_krw:
-                target_price = round_price_to_tick(
-                    price * (1.0 + aggressiveness), mode="up"
-                )
+                target_price = round_price_to_tick(exec_price * (1.0 + aggressiveness), mode="up")
                 effective_unit_cost = target_price * (1.0 + fee_rate + fee_buffer)
                 if effective_unit_cost > 0:
                     raw_volume = cash_krw / effective_unit_cost
@@ -227,14 +229,13 @@ def _backtest(
         elif score <= -threshold:
             if coin_qty > 0:
                 target_price = round_price_to_tick(
-                    price * (1.0 - aggressiveness), mode="down"
+                    exec_price * (1.0 - aggressiveness), mode="down"
                 )
                 proceed = target_price * coin_qty
                 if proceed > min_order_krw:
                     fee = proceed * fee_rate
                     cash_krw += proceed - fee
 
-                    buy_cost_basis = equity - (coin_qty * price)  # 근사치
                     after_equity = cash_krw
                     if after_equity > equity:
                         win_trades += 1
@@ -242,7 +243,7 @@ def _backtest(
                     coin_qty = 0.0
                     total_trades += 1
 
-    final_equity = cash_krw + coin_qty * float(closes[-1])
+    final_equity = cash_krw + coin_qty * candles[-1]["close"]
 
     total_return = (final_equity / float(initial_cash)) - 1.0
     max_dd = _max_drawdown(equity_curve)
@@ -250,7 +251,8 @@ def _backtest(
     win_rate = (win_trades / total_trades) if total_trades > 0 else 0.0
 
     print(
-        f"final_equity: {final_equity}, total_return: {total_return}, mdd: {max_dd}, sharpe: {sharpe}, win_rate: {win_rate}, total_trades: {total_trades}"
+        f"final_equity: {final_equity}, total_return: {total_return}, mdd: {max_dd}, "
+        f"sharpe: {sharpe}, win_rate: {win_rate}, total_trades: {total_trades}"
     )
 
     return {

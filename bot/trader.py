@@ -1,24 +1,25 @@
 import uuid
-
 from datetime import timezone
-from dateutil import parser as date_parser
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 
-from .utils import get_env, get_logger, get_db_connection
-from .strategies import ensemble_signal
-from .storage import (
+from dateutil import parser as date_parser
+
+from bot.core.config import settings
+from bot.core.context import get_db_connection, get_logger
+from bot.db.storage import (
     get_recent_prices,
     get_recent_weights,
     insert_order,
     insert_trade,
 )
-from .upbit import (
+from bot.exchange.upbit import (
     fetch_account_balances,
     fetch_order,
     place_buy_limit,
     place_sell_limit,
     round_price_to_tick,
 )
+from bot.strategies.signal import ensemble_signal
 
 logger = get_logger("trader")
 
@@ -36,13 +37,17 @@ def run():
 
 
 def run_trade():
-    market = get_env("MARKET", "KRW-BTC")
-    threshold = float(get_env("THRESHOLD", "0.2"))
-    aggressiveness = float(get_env("AGGRESSIVENESS", "0.0015"))
+    market = settings.market
+    threshold = settings.threshold
+    aggressiveness = settings.aggressiveness
 
-    prices = get_recent_prices("1m", limit=200)
-    if len(prices) < 3:
+    # 닫힌 캔들을 충분히 확보하기 위해 하나 더 가져옴
+    prices = get_recent_prices("1m", limit=201)
+    if len(prices) < 4:
         return None
+
+    # 마지막 캔들(가장 최근, 부분일 수 있음) 제거
+    prices = prices[:-1]
 
     last_price = prices[-1]
 
@@ -141,12 +146,12 @@ def _parse_available_balance(balances, currency):
 def _calc_buy_volume(balance_krw: float, target_price: float) -> float:
     """가용 KRW와 목표가로 매수 수량을 간단히 계산(수수료/버퍼 반영, 소수 8자리 내림)."""
     try:
-        fee_rate = float(get_env("FEE_RATE", "0.0005"))
+        fee_rate = settings.fee_rate
     except Exception:
         fee_rate = 0.0005
 
     try:
-        fee_buffer = float(get_env("FEE_BUFFER", "0.0005"))
+        fee_buffer = settings.fee_buffer
     except Exception:
         fee_buffer = 0.0005
 
@@ -196,9 +201,7 @@ def _serialize_trade(raw_trade, order_id):
         "order_id": order_id,
         "executed_at": (
             lambda dt: (
-                dt.astimezone(timezone.utc)
-                if dt.tzinfo
-                else dt.replace(tzinfo=timezone.utc)
+                dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
             )
         )(date_parser.isoparse(raw_trade.get("created_at"))),
         "price": _to_float(raw_trade.get("price")),

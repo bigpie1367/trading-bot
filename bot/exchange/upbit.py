@@ -1,14 +1,12 @@
-import uuid
 import hashlib
-import requests
-import jwt
-
-from datetime import datetime, timedelta
-from decimal import Decimal, ROUND_DOWN
+import uuid
+from decimal import ROUND_DOWN, Decimal
 from urllib.parse import urlencode
 
-from .utils import get_env
+import jwt
+import requests
 
+from bot.core.config import settings
 
 UPBIT_API_BASE = "https://api.upbit.com"
 UPBIT_API_HEADER = {
@@ -74,6 +72,7 @@ def place_buy_limit(market, price, volume, identifier):
         "ord_type": "limit",
         "price": _format_price(price),
         "volume": _format_volume(volume),
+        "identifier": identifier,
     }
     query_string = urlencode(params, doseq=True)
     headers = {
@@ -101,6 +100,7 @@ def place_sell_limit(market, price, volume, identifier):
         "ord_type": "limit",
         "price": _format_price(price),
         "volume": _format_volume(volume),
+        "identifier": identifier,
     }
     query_string = urlencode(params, doseq=True)
     headers = {
@@ -137,8 +137,15 @@ def fetch_order(order_uuid):
 
 
 def _make_auth_headers(params=None, query_string=None):
-    access_key = get_env("UPBIT_ACCESS_KEY")
-    secret_key = get_env("UPBIT_SECRET_KEY")
+    access_key = settings.upbit_access_key
+    secret_key = settings.upbit_secret_key
+
+    # Upbit API 키 검증
+    if not access_key or not secret_key:
+        raise ValueError(
+            "Upbit API keys are not configured. "
+            "Please set UPBIT_ACCESS_KEY and UPBIT_SECRET_KEY in your .env file."
+        )
 
     payload = {
         "access_key": access_key,
