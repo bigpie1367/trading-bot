@@ -132,15 +132,13 @@ def _execute_sell(market, last_price, aggressiveness):
 def _parse_available_balance(balances, currency):
     """해당 통화의 가용잔고 반환"""
 
-    free, locked = 0.0, 0.0
+    free = 0.0
     for b in balances:
         if b.get("currency") == currency:
             free = _to_float(b.get("balance", 0.0), 0.0)
-            locked = _to_float(b.get("locked", 0.0), 0.0)
-
             break
 
-    return max(0.0, free - locked)
+    return max(0.0, free)
 
 
 def _calc_buy_volume(balance_krw: float, target_price: float) -> float:
