@@ -1,12 +1,13 @@
 import time
-
 from datetime import timezone
+
 from dateutil import parser as date_parser
 from psycopg.types.json import Json
 
-from .utils import get_env, get_db_connection, get_logger
-from .upbit import fetch_recent_candles
-from .storage import get_recent_timestamp, insert_candles
+from bot.core.config import settings
+from bot.core.context import get_db_connection, get_logger
+from bot.db.storage import get_recent_timestamp, insert_candles
+from bot.exchange.upbit import fetch_recent_candles
 
 logger = get_logger("collector")
 
@@ -29,8 +30,8 @@ def run():
 def collect_data():
     """마지막 ts 이후 분봉만 upsert하고 삽입/갱신된 행 수 반환."""
 
-    market = get_env("MARKET", "KRW-BTC")
-    unit = int(get_env("UNIT", "1"))
+    market = settings.market
+    unit = 1
     timeframe = f"{unit}m"
 
     with get_db_connection() as connection:
@@ -54,9 +55,7 @@ def collect_data():
 def _serialize_candles(raw_candles, timeframe):
     rows = []
     for item in raw_candles:
-        ts_utc = date_parser.isoparse(item["candle_date_time_utc"]).replace(
-            tzinfo=timezone.utc
-        )
+        ts_utc = date_parser.isoparse(item["candle_date_time_utc"]).replace(tzinfo=timezone.utc)
 
         rows.append(
             (

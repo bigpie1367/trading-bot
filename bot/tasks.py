@@ -1,15 +1,12 @@
 from celery import Celery, chain
 
-from .utils import get_env
-
-from . import collector
-from . import trader
-from . import optimizer
+from bot import collector, optimizer, trader
+from bot.core.config import settings
 
 app = Celery(
     "trading_bot",
-    broker=get_env("CELERY_BROKER_URL"),
-    backend=get_env("CELERY_BACKEND_URL"),
+    broker=settings.celery_broker_url,
+    backend=settings.celery_backend_url,
 )
 
 app.conf.broker_connection_retry_on_startup = True

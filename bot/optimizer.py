@@ -1,14 +1,13 @@
-import os
 import math
-import numpy as np
-
 from concurrent.futures import ThreadPoolExecutor
 
-from .utils import get_env, get_logger
-from .upbit import round_price_to_tick
-from .storage import load_closes, save_optimizer_result
-from .strategies import ensemble_signal
+import numpy as np
 
+from bot.core.config import settings
+from bot.core.context import get_logger
+from bot.db.storage import load_closes, save_optimizer_result
+from bot.exchange.upbit import round_price_to_tick
+from bot.strategies.signal import ensemble_signal
 
 logger = get_logger("optimizer")
 
@@ -28,25 +27,23 @@ GRID_STEP = 0.1  # 가중치 전수 탐색의 기본 격자 간격(합=1.0)
 def run():
     """3개월 데이터 기반 무작위 탐색으로 weights/threshold 최적화."""
     try:
-        timeframe = f"{int(get_env('UNIT', '1'))}m"
+        timeframe = "1m"
 
-        initial_cash = float(get_env("OPT_INITIAL_CASH", "1000000"))
+        initial_cash = settings.opt_initial_cash
 
-        fee_rate = float(get_env("FEE_RATE", "0.0005"))
-        fee_buffer = float(get_env("FEE_BUFFER", "0.0005"))
+        fee_rate = settings.fee_rate
+        fee_buffer = settings.fee_buffer
 
-        aggressiveness = float(get_env("AGGRESSIVENESS", "0.0015"))
+        aggressiveness = settings.aggressiveness
 
         thresholds = _generate_threshold_candidates()
 
-        opt_window = int(get_env("OPT_WINDOW", "200"))
-        max_workers = int(get_env("OPT_THREADS", str(min(8, (os.cpu_count() or 4)))))
+        opt_window = settings.opt_window
+        max_workers = settings.opt_threads
 
         closes = load_closes(timeframe=timeframe, months=3)
         if len(closes) < 200:
-            logger.info(
-                "not enough candles for backtest; need >=200, got %d", len(closes)
-            )
+            logger.info("not enough candles for backtest; need >=200, got %d", len(closes))
             return
 
         candidates = _generate_weight_grid(GRID_STEP)
@@ -66,9 +63,7 @@ def run():
         )
 
         # 모든 후보에 대해 백테스트 수행 후 최적 선택
-        param_list = [
-            {"weights": w, "threshold": th} for w in candidates for th in thresholds
-        ]
+        param_list = [{"weights": w, "threshold": th} for w in candidates for th in thresholds]
         pairs = []
 
         def _eval_one(p):
@@ -124,7 +119,7 @@ def run():
 
 
 def _generate_threshold_candidates():
-    raw = get_env("OPT_THRESHOLDS", "").strip()
+    raw = settings.opt_thresholds.strip()
     if raw:
         return [float(x) for x in raw.split(",") if x.strip()]
 
@@ -206,9 +201,7 @@ def _backtest(
         # BUY
         if score >= threshold:
             if cash_krw > min_order_krw:
-                target_price = round_price_to_tick(
-                    price * (1.0 + aggressiveness), mode="up"
-                )
+                target_price = round_price_to_tick(price * (1.0 + aggressiveness), mode="up")
                 effective_unit_cost = target_price * (1.0 + fee_rate + fee_buffer)
                 if effective_unit_cost > 0:
                     raw_volume = cash_krw / effective_unit_cost
@@ -226,9 +219,7 @@ def _backtest(
         # SELL
         elif score <= -threshold:
             if coin_qty > 0:
-                target_price = round_price_to_tick(
-                    price * (1.0 - aggressiveness), mode="down"
-                )
+                target_price = round_price_to_tick(price * (1.0 - aggressiveness), mode="down")
                 proceed = target_price * coin_qty
                 if proceed > min_order_krw:
                     fee = proceed * fee_rate
