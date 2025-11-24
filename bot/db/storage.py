@@ -72,9 +72,9 @@ def insert_candles(connection, rows):
         cursor.executemany(sql, rows)
 
 
-def load_closes(timeframe, months):
+def load_ohlcv(timeframe, months):
     sql = """
-        SELECT close
+        SELECT open, high, low, close, volume
         FROM candles
         WHERE timeframe = %s AND ts >= now() - make_interval(months => %s)
         ORDER BY ts ASC
@@ -84,7 +84,17 @@ def load_closes(timeframe, months):
         cursor.execute(sql, (timeframe, months))
         rows = cursor.fetchall()
 
-    return [float(r[0]) for r in rows]
+    # 딕셔너리 리스트 반환
+    return [
+        {
+            "open": float(r[0]),
+            "high": float(r[1]),
+            "low": float(r[2]),
+            "close": float(r[3]),
+            "volume": float(r[4]),
+        }
+        for r in rows
+    ]
 
 
 # ------------------------------
@@ -216,7 +226,7 @@ def get_open_orders():
         SELECT id, exchange_order_id, meta
         FROM orders
         WHERE status IN ('new', 'partially_filled')
-          AND exchange_order_id IS NOT NULL
+        AND exchange_order_id IS NOT NULL
         ORDER BY placed_at ASC
     """
 

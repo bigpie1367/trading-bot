@@ -41,9 +41,13 @@ def run_trade():
     threshold = settings.threshold
     aggressiveness = settings.aggressiveness
 
-    prices = get_recent_prices("1m", limit=200)
-    if len(prices) < 3:
+    # 닫힌 캔들을 충분히 확보하기 위해 하나 더 가져옴
+    prices = get_recent_prices("1m", limit=201)
+    if len(prices) < 4:
         return None
+
+    # 마지막 캔들(가장 최근, 부분일 수 있음) 제거
+    prices = prices[:-1]
 
     last_price = prices[-1]
 
