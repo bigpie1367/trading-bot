@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     opt_window: int = 200
     opt_threads: int = 4
     opt_thresholds: str = ""
+    opt_coarse_step: float = 0.2  # 1단계 grid step
+    opt_fine_step: float = 0.05  # 2단계 grid step
+    opt_top_percent: float = 0.1  # 2단계로 넘어갈 상위 비율
+    opt_early_stop_threshold: float = -0.3  # early stopping 손실률 임계값
+    opt_early_stop_candles: int = 50  # early stopping 판단 캔들 수
 
 
 settings = Settings()
