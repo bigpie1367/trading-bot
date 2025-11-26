@@ -174,13 +174,13 @@ def _run_fine_search(
     fine_step = settings.opt_fine_step
     top_percent = settings.opt_top_percent
 
-    # 상위 N% 선택
+    # 상위 N% 선택 (최대 50개로 제한)
     sorted_results = sorted(
         coarse_results,
         key=lambda r: (r[0].get("total_return", 0), r[0].get("sharpe", 0)),
         reverse=True,
     )
-    top_n = max(1, int(len(sorted_results) * top_percent))
+    top_n = max(1, min(50, int(len(sorted_results) * top_percent)))
     top_results = sorted_results[:top_n]
 
     logger.info(
@@ -236,21 +236,35 @@ def _run_fine_search(
     return results
 
 
-def _generate_neighbor_weights(base_weights, step):
-    """주어진 가중치 주변의 이웃 조합 생성 (±step)."""
-    neighbors = []
-    keys = list(base_weights.keys())
+def _generate_neighbor_weights(base_weights, step, top_k=3):
+    """주어진 가중치 주변의 이웃 조합 생성 (±step).
 
-    # 각 전략에 대해 ±step 변화 시도
-    for i, key_i in enumerate(keys):
+    상위 K개 가중치를 가진 전략들만 조정하여 조합 폭발 방지.
+
+    Args:
+        base_weights: 기준 가중치 딕셔너리
+        step: 조정 단위
+        top_k: 조정할 상위 전략 개수 (기본값: 3)
+
+    Returns:
+        이웃 가중치 조합 리스트
+    """
+    neighbors = []
+
+    # 가중치가 큰 상위 K개 전략 선택
+    sorted_weights = sorted(base_weights.items(), key=lambda x: x[1], reverse=True)
+    top_k_keys = [k for k, v in sorted_weights[:top_k]]
+
+    # 상위 K개 전략들 간에만 조정 시도
+    for key_i in top_k_keys:
         for delta_i in [-step, step]:
             new_val_i = base_weights[key_i] + delta_i
             if new_val_i < 0 or new_val_i > 1:
                 continue
 
-            # 다른 전략에서 보상
-            for j, key_j in enumerate(keys):
-                if i == j:
+            # 다른 상위 전략에서 보상
+            for key_j in top_k_keys:
+                if key_i == key_j:
                     continue
 
                 new_val_j = base_weights[key_j] - delta_i
