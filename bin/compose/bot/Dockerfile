@@ -28,6 +28,7 @@ RUN pip install --upgrade pip && pip install -r /tmp/requirements.txt
 
 # 애플리케이션 소스 복사
 COPY bot /app/bot
+COPY dashboard.py /app/dashboard.py
 
 # 기본 커맨드
 CMD ["python", "-m", "celery", "-A", "bot.tasks", "worker", "--loglevel=INFO"]
