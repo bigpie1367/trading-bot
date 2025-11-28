@@ -1,8 +1,8 @@
 from datetime import timezone
+
 from psycopg.types.json import Json
 
-from .utils import get_db_connection
-
+from bot.core.context import get_db_connection
 
 UPSERT_PAGE_SIZE = 200
 
@@ -72,9 +72,9 @@ def insert_candles(connection, rows):
         cursor.executemany(sql, rows)
 
 
-def load_closes(timeframe, months):
+def load_ohlcv(timeframe, months):
     sql = """
-        SELECT close
+        SELECT open, high, low, close, volume
         FROM candles
         WHERE timeframe = %s AND ts >= now() - make_interval(months => %s)
         ORDER BY ts ASC
@@ -84,7 +84,17 @@ def load_closes(timeframe, months):
         cursor.execute(sql, (timeframe, months))
         rows = cursor.fetchall()
 
-    return [float(r[0]) for r in rows]
+    # 딕셔너리 리스트 반환
+    return [
+        {
+            "open": float(r[0]),
+            "high": float(r[1]),
+            "low": float(r[2]),
+            "close": float(r[3]),
+            "volume": float(r[4]),
+        }
+        for r in rows
+    ]
 
 
 # ------------------------------
@@ -158,9 +168,7 @@ def save_optimizer_result(params, metrics, mark_best):
     with get_db_connection() as connection, connection.cursor() as cursor:
         if mark_best:
             # 기존 best 결과 잠금
-            cursor.execute(
-                "SELECT id FROM optimizer_results WHERE is_best = TRUE FOR UPDATE"
-            )
+            cursor.execute("SELECT id FROM optimizer_results WHERE is_best = TRUE FOR UPDATE")
             cursor.execute(sql_reset)
 
         cursor.execute(sql_insert, (Json(params_json), Json(metrics_json), mark_best))
@@ -218,7 +226,7 @@ def get_open_orders():
         SELECT id, exchange_order_id, meta
         FROM orders
         WHERE status IN ('new', 'partially_filled')
-          AND exchange_order_id IS NOT NULL
+        AND exchange_order_id IS NOT NULL
         ORDER BY placed_at ASC
     """
 

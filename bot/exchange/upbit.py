@@ -1,14 +1,12 @@
-import uuid
 import hashlib
-import requests
-import jwt
-
-from datetime import datetime, timedelta
-from decimal import Decimal, ROUND_DOWN
+import uuid
+from decimal import ROUND_DOWN, Decimal
 from urllib.parse import urlencode
 
-from .utils import get_env
+import jwt
+import requests
 
+from bot.core.config import settings
 
 UPBIT_API_BASE = "https://api.upbit.com"
 UPBIT_API_HEADER = {
@@ -74,6 +72,7 @@ def place_buy_limit(market, price, volume, identifier):
         "ord_type": "limit",
         "price": _format_price(price),
         "volume": _format_volume(volume),
+        "identifier": identifier,
     }
     query_string = urlencode(params, doseq=True)
     headers = {
@@ -101,6 +100,7 @@ def place_sell_limit(market, price, volume, identifier):
         "ord_type": "limit",
         "price": _format_price(price),
         "volume": _format_volume(volume),
+        "identifier": identifier,
     }
     query_string = urlencode(params, doseq=True)
     headers = {
@@ -131,14 +131,55 @@ def fetch_order(order_uuid):
     return res.json()
 
 
+def fetch_open_orders(market):
+    """미체결 주문 조회"""
+
+    url = f"{UPBIT_API_BASE}/v1/orders"
+    params = {"market": market, "state": "wait", "page": 1, "limit": 100}
+    qs = urlencode(params)
+    headers = {
+        **UPBIT_API_HEADER,
+        **_make_auth_headers(query_string=qs),
+    }
+
+    res = requests.get(url, params=params, headers=headers, timeout=10)
+    res.raise_for_status()
+    return res.json()
+
+
+def cancel_order(uuid):
+    """주문 취소"""
+
+    url = f"{UPBIT_API_BASE}/v1/order"
+    params = {"uuid": uuid}
+    qs = urlencode(params)
+    headers = {
+        **UPBIT_API_HEADER,
+        **_make_auth_headers(query_string=qs),
+    }
+
+    res = requests.delete(url, params=params, headers=headers, timeout=10)
+    if not res.ok:
+        raise RuntimeError(f"Upbit cancel failed: {res.status_code} {res.text}")
+
+    return res.json()
+
+
 # ------------------------------
 # 내부 헬퍼 메서드
 # ------------------------------
 
 
 def _make_auth_headers(params=None, query_string=None):
-    access_key = get_env("UPBIT_ACCESS_KEY")
-    secret_key = get_env("UPBIT_SECRET_KEY")
+    access_key = settings.upbit_access_key
+    secret_key = settings.upbit_secret_key
+
+    # Upbit API 키 검증
+    if not access_key or not secret_key:
+        raise ValueError(
+            "Upbit API keys are not configured. "
+            "Please set UPBIT_ACCESS_KEY and UPBIT_SECRET_KEY in your .env file."
+        )
 
     payload = {
         "access_key": access_key,

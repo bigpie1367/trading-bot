@@ -1,24 +1,27 @@
 import uuid
+from datetime import datetime, timezone
+from decimal import ROUND_DOWN, Decimal
 
-from datetime import timezone
 from dateutil import parser as date_parser
-from decimal import Decimal, ROUND_DOWN
 
-from .utils import get_env, get_logger, get_db_connection
-from .strategies import ensemble_signal
-from .storage import (
+from bot.core.config import settings
+from bot.core.context import get_db_connection, get_logger
+from bot.db.storage import (
     get_recent_prices,
     get_recent_weights,
     insert_order,
     insert_trade,
 )
-from .upbit import (
+from bot.exchange.upbit import (
+    cancel_order,
     fetch_account_balances,
+    fetch_open_orders,
     fetch_order,
     place_buy_limit,
     place_sell_limit,
     round_price_to_tick,
 )
+from bot.strategies.signal import ensemble_signal
 
 logger = get_logger("trader")
 
@@ -36,18 +39,25 @@ def run():
 
 
 def run_trade():
-    market = get_env("MARKET", "KRW-BTC")
-    threshold = float(get_env("THRESHOLD", "0.2"))
-    aggressiveness = float(get_env("AGGRESSIVENESS", "0.0015"))
+    market = settings.market
+    threshold = settings.threshold
+    aggressiveness = settings.aggressiveness
 
-    prices = get_recent_prices("1m", limit=200)
-    if len(prices) < 3:
+    # 닫힌 캔들을 충분히 확보하기 위해 하나 더 가져옴
+    prices = get_recent_prices("1m", limit=201)
+    if len(prices) < 4:
         return None
+
+    # 마지막 캔들(가장 최근, 부분일 수 있음) 제거
+    prices = prices[:-1]
 
     last_price = prices[-1]
 
     # 전략 기준 매수/매도 여부 판단
     weights = get_recent_weights()
+
+    # 미체결 주문 취소 (타임아웃)
+    _cancel_stale_orders(market)
 
     score = ensemble_signal(prices, weights)
     if score >= threshold:
@@ -56,6 +66,41 @@ def run_trade():
         return _execute_sell(market, last_price, aggressiveness)
 
     return None
+
+
+def _cancel_stale_orders(market):
+    """오래된 미체결 주문 취소"""
+    try:
+        orders = fetch_open_orders(market)
+        if not orders:
+            return
+
+        threshold_sec = getattr(settings, "stale_order_threshold_seconds", 300)
+        now = datetime.now(timezone.utc)
+
+        for order in orders:
+            created_at_str = order.get("created_at")
+            if not created_at_str:
+                continue
+
+            created_at = date_parser.isoparse(created_at_str)
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            else:
+                created_at = created_at.astimezone(timezone.utc)
+
+            # 경과 시간 기준 비교
+            elapsed = (now - created_at).total_seconds()
+            if elapsed > threshold_sec:
+                uuid = order.get("uuid")
+                logger.info(f"canceling stale order {uuid} (elapsed: {elapsed:.1f}s)")
+                try:
+                    cancel_order(uuid)
+                except Exception:
+                    logger.exception(f"failed to cancel order {uuid}")
+
+    except Exception:
+        logger.exception("failed to check/cancel stale orders")
 
 
 # ------------------------------
@@ -127,26 +172,24 @@ def _execute_sell(market, last_price, aggressiveness):
 def _parse_available_balance(balances, currency):
     """해당 통화의 가용잔고 반환"""
 
-    free, locked = 0.0, 0.0
+    free = 0.0
     for b in balances:
         if b.get("currency") == currency:
             free = _to_float(b.get("balance", 0.0), 0.0)
-            locked = _to_float(b.get("locked", 0.0), 0.0)
-
             break
 
-    return max(0.0, free - locked)
+    return max(0.0, free)
 
 
 def _calc_buy_volume(balance_krw: float, target_price: float) -> float:
     """가용 KRW와 목표가로 매수 수량을 간단히 계산(수수료/버퍼 반영, 소수 8자리 내림)."""
     try:
-        fee_rate = float(get_env("FEE_RATE", "0.0005"))
+        fee_rate = settings.fee_rate
     except Exception:
         fee_rate = 0.0005
 
     try:
-        fee_buffer = float(get_env("FEE_BUFFER", "0.0005"))
+        fee_buffer = settings.fee_buffer
     except Exception:
         fee_buffer = 0.0005
 
@@ -196,9 +239,7 @@ def _serialize_trade(raw_trade, order_id):
         "order_id": order_id,
         "executed_at": (
             lambda dt: (
-                dt.astimezone(timezone.utc)
-                if dt.tzinfo
-                else dt.replace(tzinfo=timezone.utc)
+                dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
             )
         )(date_parser.isoparse(raw_trade.get("created_at"))),
         "price": _to_float(raw_trade.get("price")),

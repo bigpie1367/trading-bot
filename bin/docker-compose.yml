@@ -104,3 +104,21 @@ services:
     restart: unless-stopped
     networks:
       - trading-bot-network
+
+  # -------------------------
+  # Dashboard
+  # -------------------------
+  dashboard:
+    build:
+      context: ..
+      dockerfile: ./bin/compose/bot/Dockerfile
+    env_file:
+      - ./.envs/.bot
+    command: streamlit run dashboard.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    depends_on:
+      - database
+    restart: unless-stopped
+    networks:
+      - trading-bot-network

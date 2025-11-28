@@ -1,9 +1,9 @@
-import os
 import logging
-import psycopg
 
+import psycopg
 from pythonjsonlogger import jsonlogger
 
+from bot.core.config import settings
 
 _json_formatter = jsonlogger.JsonFormatter(
     "%(asctime)s %(levelname)s %(name)s %(message)s %(filename)s %(lineno)d"
@@ -14,7 +14,7 @@ _stream_handler.setFormatter(_json_formatter)
 
 def get_logger(name="trading-bot", level=None):
     if level is None:
-        level = os.getenv("LOG_LEVEL", "INFO")
+        level = settings.log_level
 
     logger = logging.getLogger(name)
     if not logger.handlers:
@@ -25,16 +25,8 @@ def get_logger(name="trading-bot", level=None):
     return logger
 
 
-def get_env(name, default=None):
-    value = os.getenv(name, default)
-    if value is None:
-        raise RuntimeError(f"Required environment variable not set: {name}")
-
-    return value
-
-
 def get_db_connection():
     try:
-        return psycopg.connect(get_env("DATABASE_URL"))
+        return psycopg.connect(settings.database_url)
     except (RuntimeError, psycopg.Error) as e:
         raise RuntimeError("Failed to connect to database") from e
