@@ -48,23 +48,25 @@ days_to_load = st.sidebar.slider("Days to Load", min_value=1, max_value=7, value
 @st.cache_data(ttl=10)
 def load_data(market, timeframe, days):
     with get_db_connection() as conn:
-        # Load Candles
-        candles_query = f"""
+        # Load Candles - using parameterized query to prevent SQL injection
+        candles_query = """
             SELECT ts, open, high, low, close, volume
             FROM candles
-            WHERE timeframe = '{timeframe}'
-              AND meta->>'market' = '{market}'
-              AND ts >= NOW() - INTERVAL '{days} days'
+            WHERE timeframe = %(timeframe)s
+              AND meta->>'market' = %(market)s
+              AND ts >= NOW() - INTERVAL '1 day' * %(days)s
             ORDER BY ts ASC
         """
-        df_candles = pd.read_sql(candles_query, conn)
+        df_candles = pd.read_sql(
+            candles_query, conn, params={"timeframe": timeframe, "market": market, "days": days}
+        )
 
         if not df_candles.empty:
             df_candles["ts"] = pd.to_datetime(df_candles["ts"])
             df_candles.set_index("ts", inplace=True)
 
-        # Load Trades
-        trades_query = f"""
+        # Load Trades - using parameterized query to prevent SQL injection
+        trades_query = """
             SELECT
                 t.executed_at,
                 t.price,
@@ -74,28 +76,34 @@ def load_data(market, timeframe, days):
                 (t.price * t.quantity) as trade_amount
             FROM trades t
             JOIN orders o ON t.order_id = o.id
-            WHERE t.executed_at >= NOW() - INTERVAL '{days} days'
-              AND o.meta->>'market' = '{market}'
+            WHERE t.executed_at >= NOW() - INTERVAL '1 day' * %(days)s
+              AND o.meta->>'market' = %(market)s
             ORDER BY t.executed_at ASC
         """
-        df_trades = pd.read_sql(trades_query, conn)
+        df_trades = pd.read_sql(trades_query, conn, params={"market": market, "days": days})
         if not df_trades.empty:
             df_trades["executed_at"] = pd.to_datetime(df_trades["executed_at"])
 
-            # Calculate profit/loss by comparing with previous trade
+            # Calculate profit/loss using weighted average cost basis
             df_trades["pnl"] = 0.0
-            last_buy_amount = None
+            accumulated_cost = 0.0
+            accumulated_qty = 0.0
 
             for idx in df_trades.index:
                 if df_trades.loc[idx, "side"] == "buy":
-                    last_buy_amount = (
-                        df_trades.loc[idx, "trade_amount"] + df_trades.loc[idx, "fee"]
-                    )
+                    buy_cost = df_trades.loc[idx, "trade_amount"] + df_trades.loc[idx, "fee"]
+                    buy_qty = df_trades.loc[idx, "quantity"]
+                    accumulated_cost += buy_cost
+                    accumulated_qty += buy_qty
                     df_trades.loc[idx, "pnl"] = 0.0  # No P&L on buy
-                elif df_trades.loc[idx, "side"] == "sell" and last_buy_amount is not None:
+                elif df_trades.loc[idx, "side"] == "sell" and accumulated_qty > 0:
+                    sell_qty = df_trades.loc[idx, "quantity"]
+                    avg_cost_per_unit = accumulated_cost / accumulated_qty
+                    cost_basis = avg_cost_per_unit * sell_qty
                     sell_amount = df_trades.loc[idx, "trade_amount"] - df_trades.loc[idx, "fee"]
-                    df_trades.loc[idx, "pnl"] = sell_amount - last_buy_amount
-                    last_buy_amount = None  # Reset after sell
+                    df_trades.loc[idx, "pnl"] = sell_amount - cost_basis
+                    accumulated_cost -= cost_basis
+                    accumulated_qty -= sell_qty
 
     return df_candles, df_trades
 
