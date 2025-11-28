@@ -14,13 +14,6 @@ st.title("🤖 Trading Bot Dashboard")
 # ---------------------------
 st.sidebar.header("Configuration")
 
-# DB Connection for initial setup
-try:
-    conn = get_db_connection()
-except Exception as e:
-    st.error(f"Failed to connect to DB: {e}")
-    st.stop()
-
 
 @st.cache_data(ttl=60)
 def load_market_options():
