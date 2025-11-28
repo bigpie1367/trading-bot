@@ -131,6 +131,40 @@ def fetch_order(order_uuid):
     return res.json()
 
 
+def fetch_open_orders(market):
+    """미체결 주문 조회"""
+
+    url = f"{UPBIT_API_BASE}/v1/orders"
+    params = {"market": market, "state": "wait", "page": 1, "limit": 100}
+    qs = urlencode(params)
+    headers = {
+        **UPBIT_API_HEADER,
+        **_make_auth_headers(query_string=qs),
+    }
+
+    res = requests.get(url, params=params, headers=headers, timeout=10)
+    res.raise_for_status()
+    return res.json()
+
+
+def cancel_order(uuid):
+    """주문 취소"""
+
+    url = f"{UPBIT_API_BASE}/v1/order"
+    params = {"uuid": uuid}
+    qs = urlencode(params)
+    headers = {
+        **UPBIT_API_HEADER,
+        **_make_auth_headers(query_string=qs),
+    }
+
+    res = requests.delete(url, params=params, headers=headers, timeout=10)
+    if not res.ok:
+        raise RuntimeError(f"Upbit cancel failed: {res.status_code} {res.text}")
+
+    return res.json()
+
+
 # ------------------------------
 # 내부 헬퍼 메서드
 # ------------------------------
