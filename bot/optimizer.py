@@ -131,6 +131,7 @@ def _run_coarse_search(
 
     param_list = [{"weights": w, "threshold": th} for w in candidates for th in thresholds]
     results = []
+    total_tasks = len(param_list)
 
     def _eval_one(p):
         return (
@@ -147,9 +148,24 @@ def _run_coarse_search(
             p,
         )
 
+    logger.info(
+        "starting coarse search execution",
+        extra={"total_tasks": total_tasks},
+    )
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for res in executor.map(_eval_one, param_list, chunksize=1):
+        for i, res in enumerate(executor.map(_eval_one, param_list, chunksize=1)):
             results.append(res)
+            # Progress logging every 1000 tasks
+            if (i + 1) % 1000 == 0 or (i + 1) == total_tasks:
+                logger.info(
+                    "coarse search progress",
+                    extra={
+                        "completed": i + 1,
+                        "total": total_tasks,
+                        "percent": round((i + 1) / total_tasks * 100, 1),
+                    },
+                )
 
     logger.info(
         "stage 1 complete",
@@ -208,6 +224,7 @@ def _run_fine_search(
 
     param_list = [{"weights": w, "threshold": th} for w in fine_candidates for th in thresholds]
     results = []
+    total_tasks = len(param_list)
 
     def _eval_one(p):
         return (
@@ -224,9 +241,24 @@ def _run_fine_search(
             p,
         )
 
+    logger.info(
+        "starting fine search execution",
+        extra={"total_tasks": total_tasks},
+    )
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for res in executor.map(_eval_one, param_list, chunksize=1):
+        for i, res in enumerate(executor.map(_eval_one, param_list, chunksize=1)):
             results.append(res)
+            # Progress logging every 1000 tasks
+            if (i + 1) % 1000 == 0 or (i + 1) == total_tasks:
+                logger.info(
+                    "fine search progress",
+                    extra={
+                        "completed": i + 1,
+                        "total": total_tasks,
+                        "percent": round((i + 1) / total_tasks * 100, 1),
+                    },
+                )
 
     logger.info(
         "stage 2 complete",
