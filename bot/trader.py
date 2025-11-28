@@ -1,5 +1,5 @@
 import uuid
-from datetime import timezone
+from datetime import datetime, timezone
 from decimal import ROUND_DOWN, Decimal
 
 from dateutil import parser as date_parser
@@ -13,7 +13,9 @@ from bot.db.storage import (
     insert_trade,
 )
 from bot.exchange.upbit import (
+    cancel_order,
     fetch_account_balances,
+    fetch_open_orders,
     fetch_order,
     place_buy_limit,
     place_sell_limit,
@@ -54,6 +56,9 @@ def run_trade():
     # 전략 기준 매수/매도 여부 판단
     weights = get_recent_weights()
 
+    # 미체결 주문 취소 (타임아웃)
+    _cancel_stale_orders(market)
+
     score = ensemble_signal(prices, weights)
     if score >= threshold:
         return _execute_buy(market, last_price, aggressiveness)
@@ -61,6 +66,41 @@ def run_trade():
         return _execute_sell(market, last_price, aggressiveness)
 
     return None
+
+
+def _cancel_stale_orders(market):
+    """오래된 미체결 주문 취소"""
+    try:
+        orders = fetch_open_orders(market)
+        if not orders:
+            return
+
+        threshold_sec = getattr(settings, "stale_order_threshold_seconds", 300)
+        now = datetime.now(timezone.utc)
+
+        for order in orders:
+            created_at_str = order.get("created_at")
+            if not created_at_str:
+                continue
+
+            created_at = date_parser.isoparse(created_at_str)
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            else:
+                created_at = created_at.astimezone(timezone.utc)
+
+            # 경과 시간 기준 비교
+            elapsed = (now - created_at).total_seconds()
+            if elapsed > threshold_sec:
+                uuid = order.get("uuid")
+                logger.info(f"canceling stale order {uuid} (elapsed: {elapsed:.1f}s)")
+                try:
+                    cancel_order(uuid)
+                except Exception:
+                    logger.exception(f"failed to cancel order {uuid}")
+
+    except Exception:
+        logger.exception("failed to check/cancel stale orders")
 
 
 # ------------------------------

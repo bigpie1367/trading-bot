@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     aggressiveness: float = 0.0015
     fee_rate: float = 0.0005
     fee_buffer: float = 0.0005
+    stale_order_threshold_seconds: int = 300
 
     # Celery
     celery_broker_url: str
