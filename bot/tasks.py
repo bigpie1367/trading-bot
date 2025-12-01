@@ -31,6 +31,8 @@ def optimize_weights():
 def run_single_backtest(
     candles, weights, threshold, initial_cash, fee_rate, fee_buffer, aggressiveness, window
 ):
+    from bot.optimizer import optimizer
+
     return optimizer._backtest(
         candles, weights, threshold, initial_cash, fee_rate, fee_buffer, aggressiveness, window
     )
