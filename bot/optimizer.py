@@ -1,13 +1,15 @@
 import math
-from concurrent.futures import ThreadPoolExecutor
+import time
 
 import numpy as np
+from celery import group
 
 from bot.core.config import settings
 from bot.core.context import get_logger
 from bot.db.storage import load_ohlcv, save_optimizer_result
 from bot.exchange.upbit import round_price_to_tick
 from bot.strategies.signal import ensemble_signal
+from bot.tasks import run_single_backtest
 
 logger = get_logger("optimizer")
 
@@ -120,7 +122,8 @@ def run():
 def _run_coarse_search(
     candles, thresholds, initial_cash, fee_rate, fee_buffer, aggressiveness, window, max_workers
 ):
-    """1단계: Coarse Grid Search 실행."""
+    """1단계: Coarse Grid Search 실행 (Celery Canvas 분산 처리)."""
+
     coarse_step = settings.opt_coarse_step
     candidates = _generate_weight_grid(coarse_step)
 
@@ -130,42 +133,51 @@ def _run_coarse_search(
     )
 
     param_list = [{"weights": w, "threshold": th} for w in candidates for th in thresholds]
-    results = []
     total_tasks = len(param_list)
-
-    def _eval_one(p):
-        return (
-            _backtest(
-                candles=candles,
-                weights=p["weights"],
-                threshold=p["threshold"],
-                initial_cash=initial_cash,
-                fee_rate=fee_rate,
-                fee_buffer=fee_buffer,
-                aggressiveness=aggressiveness,
-                window=window,
-            ),
-            p,
-        )
 
     logger.info(
         "starting coarse search execution",
         extra={"total_tasks": total_tasks},
     )
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for i, res in enumerate(executor.map(_eval_one, param_list, chunksize=1)):
-            results.append(res)
-            # Progress logging every 1000 tasks
-            if (i + 1) % 1000 == 0 or (i + 1) == total_tasks:
-                logger.info(
-                    "coarse search progress",
-                    extra={
-                        "completed": i + 1,
-                        "total": total_tasks,
-                        "percent": round((i + 1) / total_tasks * 100, 1),
-                    },
-                )
+    # Celery group으로 병렬 실행
+    job = group(
+        run_single_backtest.s(
+            candles,
+            p["weights"],
+            p["threshold"],
+            initial_cash,
+            fee_rate,
+            fee_buffer,
+            aggressiveness,
+            window,
+        )
+        for p in param_list
+    )
+
+    # 비동기 실행
+    async_result = job.apply_async()
+
+    # 진행률 모니터링
+    last_completed = 0
+    while not async_result.ready():
+        time.sleep(30)  # 30초마다 체크
+        completed = async_result.completed_count()
+
+        # 진행률이 변경되었거나 1000개 단위일 때만 로깅
+        if completed != last_completed and (completed % 1000 == 0 or completed == total_tasks):
+            logger.info(
+                "coarse search progress",
+                extra={
+                    "completed": completed,
+                    "total": total_tasks,
+                    "percent": round(completed / total_tasks * 100, 1),
+                },
+            )
+            last_completed = completed
+
+    # 최종 결과 수집
+    results = async_result.get()
 
     logger.info(
         "stage 1 complete",
@@ -186,7 +198,8 @@ def _run_fine_search(
     window,
     max_workers,
 ):
-    """2단계: Fine Grid Search 실행 (상위 결과 주변)."""
+    """2단계: Fine Grid Search 실행."""
+
     fine_step = settings.opt_fine_step
     top_percent = settings.opt_top_percent
 
@@ -223,42 +236,52 @@ def _run_fine_search(
     )
 
     param_list = [{"weights": w, "threshold": th} for w in fine_candidates for th in thresholds]
-    results = []
     total_tasks = len(param_list)
-
-    def _eval_one(p):
-        return (
-            _backtest(
-                candles=candles,
-                weights=p["weights"],
-                threshold=p["threshold"],
-                initial_cash=initial_cash,
-                fee_rate=fee_rate,
-                fee_buffer=fee_buffer,
-                aggressiveness=aggressiveness,
-                window=window,
-            ),
-            p,
-        )
 
     logger.info(
         "starting fine search execution",
         extra={"total_tasks": total_tasks},
     )
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for i, res in enumerate(executor.map(_eval_one, param_list, chunksize=1)):
-            results.append(res)
-            # Progress logging every 1000 tasks
-            if (i + 1) % 1000 == 0 or (i + 1) == total_tasks:
-                logger.info(
-                    "fine search progress",
-                    extra={
-                        "completed": i + 1,
-                        "total": total_tasks,
-                        "percent": round((i + 1) / total_tasks * 100, 1),
-                    },
-                )
+    # Celery group으로 병렬 실행
+
+    job = group(
+        run_single_backtest.s(
+            candles,
+            p["weights"],
+            p["threshold"],
+            initial_cash,
+            fee_rate,
+            fee_buffer,
+            aggressiveness,
+            window,
+        )
+        for p in param_list
+    )
+
+    # 비동기 실행
+    async_result = job.apply_async()
+
+    # 진행률 모니터링
+    last_completed = 0
+    while not async_result.ready():
+        time.sleep(30)  # 30초마다 체크
+        completed = async_result.completed_count()
+
+        # 진행률이 변경되었거나 1000개 단위일 때만 로깅
+        if completed != last_completed and (completed % 1000 == 0 or completed == total_tasks):
+            logger.info(
+                "fine search progress",
+                extra={
+                    "completed": completed,
+                    "total": total_tasks,
+                    "percent": round(completed / total_tasks * 100, 1),
+                },
+            )
+            last_completed = completed
+
+    # 최종 결과 수집
+    results = async_result.get()
 
     logger.info(
         "stage 2 complete",

@@ -27,6 +27,15 @@ def optimize_weights():
     optimizer.run()
 
 
+@app.task(queue="optimizer_queue")
+def run_single_backtest(
+    candles, weights, threshold, initial_cash, fee_rate, fee_buffer, aggressiveness, window
+):
+    return optimizer._backtest(
+        candles, weights, threshold, initial_cash, fee_rate, fee_buffer, aggressiveness, window
+    )
+
+
 # ------------------------------
 # Coordinator: collect -> trade
 # ------------------------------
