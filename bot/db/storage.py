@@ -116,25 +116,11 @@ def get_recent_weights():
         row = cursor.fetchone()
 
     if not row:
-        return {
-            "trend": 0.2,
-            "momentum": 0.2,
-            "swing": 0.2,
-            "scalping": 0.15,
-            "day": 0.15,
-            "price_action": 0.1,
-        }
+        raise ValueError("No best optimizer result found")
 
     params = row[0]
     if "weights" not in params or not isinstance(params["weights"], dict):
-        return {
-            "trend": 0,
-            "momentum": 0,
-            "swing": 0,
-            "scalping": 0,
-            "day": 0,
-            "price_action": 0,
-        }
+        raise ValueError("Invalid optimizer result format")
 
     return params["weights"]
 
