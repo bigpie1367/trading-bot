@@ -1,15 +1,12 @@
 import math
-import time
 
 import numpy as np
-from celery import group
 
 from bot.core.config import settings
 from bot.core.context import get_logger
-from bot.db.storage import load_ohlcv, save_optimizer_result
+from bot.db.storage import save_optimizer_result
 from bot.exchange.upbit import round_price_to_tick
 from bot.strategies.signal import ensemble_signal
-from bot.tasks import run_single_backtest
 
 logger = get_logger("optimizer")
 
@@ -27,181 +24,25 @@ STRATEGY_KEYS = [
 ]
 
 
-def run():
-    """2단계 Coarse-to-Fine Grid Search로 weights/threshold 최적화."""
-
-    try:
-        timeframe = "1m"
-        initial_cash = settings.opt_initial_cash
-        fee_rate = settings.fee_rate
-        fee_buffer = settings.fee_buffer
-        aggressiveness = settings.aggressiveness
-        thresholds = _generate_threshold_candidates()
-        opt_window = settings.opt_window
-        max_workers = settings.opt_threads
-
-        candles = load_ohlcv(timeframe=timeframe, months=3)
-        if len(candles) < 200:
-            logger.info(f"not enough candles for backtest; need >=200, got {len(candles)}")
-            return
-
-        logger.info(
-            "start 2-stage optimization",
-            extra={
-                "timeframe": timeframe,
-                "months": 3,
-                "thresholds": thresholds,
-                "coarse_step": settings.opt_coarse_step,
-                "fine_step": settings.opt_fine_step,
-                "top_percent": settings.opt_top_percent,
-                "num_candles": len(candles),
-                "max_workers": max_workers,
-            },
-        )
-
-        # Stage 1: Coarse Search
-        coarse_results = _run_coarse_search(
-            candles=candles,
-            thresholds=thresholds,
-            initial_cash=initial_cash,
-            fee_rate=fee_rate,
-            fee_buffer=fee_buffer,
-            aggressiveness=aggressiveness,
-            window=opt_window,
-            max_workers=max_workers,
-        )
-
-        if not coarse_results:
-            logger.info("no candidate evaluated in coarse search")
-            return
-
-        # Stage 2: Fine Search around top performers
-        fine_results = _run_fine_search(
-            candles=candles,
-            thresholds=thresholds,
-            coarse_results=coarse_results,
-            initial_cash=initial_cash,
-            fee_rate=fee_rate,
-            fee_buffer=fee_buffer,
-            aggressiveness=aggressiveness,
-            window=opt_window,
-            max_workers=max_workers,
-        )
-
-        # Combine and select best
-        all_results = coarse_results + fine_results
-        best, best_params = max(
-            all_results, key=lambda r: (r[0].get("total_return", 0), r[0].get("sharpe", 0))
-        )
-
-        save_optimizer_result(params=best_params, metrics=best, mark_best=True)
-
-        logger.info(
-            "optimization done",
-            extra={
-                "final_equity": best["final_equity"],
-                "total_return": best["total_return"],
-                "max_drawdown": best["max_drawdown"],
-                "sharpe": best["sharpe"],
-                "win_rate": best["win_rate"],
-                "num_trades": best["num_trades"],
-                "threshold": best_params.get("threshold"),
-                "weights": best_params.get("weights"),
-            },
-        )
-    except Exception:
-        logger.exception("optimizer failed")
-        raise
-
-
-# ------------------------------
-# 내부 헬퍼 메서드
-# ------------------------------
-
-
-def _run_coarse_search(
-    candles, thresholds, initial_cash, fee_rate, fee_buffer, aggressiveness, window, max_workers
-):
-    """1단계: Coarse Grid Search 실행 (Celery Canvas 분산 처리)."""
-
+def generate_coarse_params():
+    """1단계 Coarse Search를 위한 파라미터 조합 생성."""
     coarse_step = settings.opt_coarse_step
     candidates = _generate_weight_grid(coarse_step)
+    thresholds = _generate_threshold_candidates()
 
     logger.info(
-        "stage 1: coarse search",
+        "generating coarse params",
         extra={"grid_step": coarse_step, "num_candidates": len(candidates)},
     )
 
-    param_list = [{"weights": w, "threshold": th} for w in candidates for th in thresholds]
-    total_tasks = len(param_list)
-
-    logger.info(
-        "starting coarse search execution",
-        extra={"total_tasks": total_tasks},
-    )
-
-    # Celery group으로 병렬 실행
-    job = group(
-        run_single_backtest.s(
-            candles,
-            p["weights"],
-            p["threshold"],
-            initial_cash,
-            fee_rate,
-            fee_buffer,
-            aggressiveness,
-            window,
-        )
-        for p in param_list
-    )
-
-    # 비동기 실행
-    async_result = job.apply_async()
-
-    # 진행률 모니터링
-    last_completed = 0
-    while not async_result.ready():
-        time.sleep(30)  # 30초마다 체크
-        completed = async_result.completed_count()
-
-        # 진행률이 변경되었거나 1000개 단위일 때만 로깅
-        if completed != last_completed and (completed % 1000 == 0 or completed == total_tasks):
-            logger.info(
-                "coarse search progress",
-                extra={
-                    "completed": completed,
-                    "total": total_tasks,
-                    "percent": round(completed / total_tasks * 100, 1),
-                },
-            )
-            last_completed = completed
-
-    # 최종 결과 수집
-    results = async_result.get()
-
-    logger.info(
-        "stage 1 complete",
-        extra={"num_evaluated": len(results)},
-    )
-
-    return results
+    return [{"weights": w, "threshold": th} for w in candidates for th in thresholds]
 
 
-def _run_fine_search(
-    candles,
-    thresholds,
-    coarse_results,
-    initial_cash,
-    fee_rate,
-    fee_buffer,
-    aggressiveness,
-    window,
-    max_workers,
-):
-    """2단계: Fine Grid Search 실행."""
-
+def generate_fine_params(coarse_results):
+    """1단계 결과를 바탕으로 2단계 Fine Search 파라미터 생성."""
     fine_step = settings.opt_fine_step
     top_percent = settings.opt_top_percent
+    thresholds = _generate_threshold_candidates()
 
     # 상위 N% 선택 (최대 50개로 제한)
     sorted_results = sorted(
@@ -213,7 +54,7 @@ def _run_fine_search(
     top_results = sorted_results[:top_n]
 
     logger.info(
-        "stage 2: fine search",
+        "generating fine params",
         extra={
             "grid_step": fine_step,
             "top_n": top_n,
@@ -235,60 +76,34 @@ def _run_fine_search(
         extra={"num_candidates": len(fine_candidates)},
     )
 
-    param_list = [{"weights": w, "threshold": th} for w in fine_candidates for th in thresholds]
-    total_tasks = len(param_list)
+    return [{"weights": w, "threshold": th} for w in fine_candidates for th in thresholds]
+
+
+def save_best_result(all_results):
+    """최종 결과 중 베스트를 선정하여 저장."""
+    if not all_results:
+        logger.warning("no results to save")
+        return
+
+    best, best_params = max(
+        all_results, key=lambda r: (r[0].get("total_return", 0), r[0].get("sharpe", 0))
+    )
+
+    save_optimizer_result(params=best_params, metrics=best, mark_best=True)
 
     logger.info(
-        "starting fine search execution",
-        extra={"total_tasks": total_tasks},
+        "optimization done",
+        extra={
+            "final_equity": best["final_equity"],
+            "total_return": best["total_return"],
+            "max_drawdown": best["max_drawdown"],
+            "sharpe": best["sharpe"],
+            "win_rate": best["win_rate"],
+            "num_trades": best["num_trades"],
+            "threshold": best_params.get("threshold"),
+            "weights": best_params.get("weights"),
+        },
     )
-
-    # Celery group으로 병렬 실행
-
-    job = group(
-        run_single_backtest.s(
-            candles,
-            p["weights"],
-            p["threshold"],
-            initial_cash,
-            fee_rate,
-            fee_buffer,
-            aggressiveness,
-            window,
-        )
-        for p in param_list
-    )
-
-    # 비동기 실행
-    async_result = job.apply_async()
-
-    # 진행률 모니터링
-    last_completed = 0
-    while not async_result.ready():
-        time.sleep(30)  # 30초마다 체크
-        completed = async_result.completed_count()
-
-        # 진행률이 변경되었거나 1000개 단위일 때만 로깅
-        if completed != last_completed and (completed % 1000 == 0 or completed == total_tasks):
-            logger.info(
-                "fine search progress",
-                extra={
-                    "completed": completed,
-                    "total": total_tasks,
-                    "percent": round(completed / total_tasks * 100, 1),
-                },
-            )
-            last_completed = completed
-
-    # 최종 결과 수집
-    results = async_result.get()
-
-    logger.info(
-        "stage 2 complete",
-        extra={"num_evaluated": len(results)},
-    )
-
-    return results
 
 
 def _generate_neighbor_weights(base_weights, step, top_k=3):
@@ -398,7 +213,7 @@ def _generate_weight_grid(step):
     return candidates
 
 
-def _backtest(
+def run_backtest(
     candles,
     weights,
     threshold,
@@ -536,6 +351,7 @@ def _max_drawdown(equity_curve):
 def _sharpe_ratio(returns, periods_per_year=365 * 24 * 60):
     if not returns:
         return 0.0
+
     mean = float(np.mean(returns))
     std = float(np.std(returns, ddof=1)) if len(returns) > 1 else 0.0
     if std == 0.0:
@@ -543,7 +359,3 @@ def _sharpe_ratio(returns, periods_per_year=365 * 24 * 60):
 
     # 분당 수익률을 연율화
     return math.sqrt(periods_per_year) * (mean / std)
-
-
-if __name__ == "__main__":
-    run()
